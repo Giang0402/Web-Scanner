@@ -1,0 +1,11 @@
+# Tệp tin của môi trường ảo Python
+venv/
+__pycache__/
+
+# Tệp tin của các IDE
+.vscode/
+.idea/
+
+# Các file hệ điều hành
+.DS_Store
+Thumbs.db
