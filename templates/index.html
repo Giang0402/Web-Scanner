@@ -1,49 +1,161 @@
-<!DOCTYPE html>
-<html lang="vi">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Web Vulnerability Scanner</title>
-    <style>
-      body {
-        font-family: Arial, sans-serif;
-        margin: 40px;
-      }
-      .container {
-        max-width: 600px;
-        margin: auto;
-        padding: 20px;
-        border: 1px solid #ccc;
-        border-radius: 10px;
-      }
-      input[type="url"] {
-        width: 95%;
-        padding: 10px;
-        margin-bottom: 10px;
-      }
-      button {
-        padding: 10px 20px;
-        background-color: #007bff;
-        color: white;
-        border: none;
-        cursor: pointer;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="container">
-      <h2>Chương trình Phân tích Lỗ hổng Web</h2>
-      <form action="/scan" method="POST">
-        <label for="url">Nhập URL mục tiêu:</label>
-        <input
-          type="url"
-          id="url"
-          name="url"
-          placeholder="http://example.com"
-          required
-        />
-        <button type="submit">Bắt đầu quét</button>
-      </form>
+{% extends 'layout.html' %} {% block title %}Dashboard - Web Scanner{% endblock
+%} {% block content %}
+<div class="bg-white p-6 rounded-lg shadow-lg mb-8">
+  <h1 class="text-2xl font-bold text-gray-800 mb-4">
+    Bắt đầu một phiên quét mới
+  </h1>
+  <form id="scan-form">
+    <div class="flex items-center border-b-2 border-blue-500 py-2">
+      <input
+        id="url-input"
+        class="appearance-none bg-transparent border-none w-full text-gray-700 mr-3 py-1 px-2 leading-tight focus:outline-none"
+        type="text"
+        placeholder="http://example.com"
+        aria-label="Target URL"
+        required
+      />
+      <button
+        class="flex-shrink-0 bg-blue-500 hover:bg-blue-700 border-blue-500 hover:border-blue-700 text-sm border-4 text-white py-1 px-2 rounded"
+        type="submit"
+      >
+        Bắt đầu quét
+      </button>
     </div>
-  </body>
-</html>
+  </form>
+  <div id="form-message" class="mt-4"></div>
+</div>
+
+<div class="bg-white p-6 rounded-lg shadow-lg">
+  <h2 class="text-2xl font-bold text-gray-800 mb-4">Lịch sử các phiên quét</h2>
+  <div class="overflow-x-auto">
+    <table class="min-w-full bg-white">
+      <thead class="bg-gray-800 text-white">
+        <tr>
+          <th class="text-left py-3 px-4 uppercase font-semibold text-sm">
+            ID
+          </th>
+          <th class="text-left py-3 px-4 uppercase font-semibold text-sm">
+            URL Mục tiêu
+          </th>
+          <th class="text-left py-3 px-4 uppercase font-semibold text-sm">
+            Trạng thái
+          </th>
+          <th class="text-left py-3 px-4 uppercase font-semibold text-sm">
+            Thời gian tạo
+          </th>
+          <th class="text-left py-3 px-4 uppercase font-semibold text-sm">
+            Hành động
+          </th>
+        </tr>
+      </thead>
+      <tbody id="scans-table-body" class="text-gray-700">
+        {% for scan in scans %}
+        <tr class="border-b" id="scan-row-{{ scan.id }}">
+          <td class="py-3 px-4">{{ scan.id }}</td>
+          <td class="py-3 px-4 truncate max-w-xs">
+            <a
+              href="{{ url_for('scan_details', scan_id=scan.id) }}"
+              class="text-blue-500 hover:underline"
+              >{{ scan.target_url }}</a
+            >
+          </td>
+          <td class="py-3 px-4">
+            <span
+              id="status-{{ scan.id }}"
+              class="px-2 py-1 font-semibold leading-tight rounded-full"
+              data-status="{{ scan.status }}"
+            >
+              {{ scan.status }}
+            </span>
+          </td>
+          <td class="py-3 px-4">
+            {{ scan.created_at.strftime('%Y-%m-%d %H:%M:%S') }}
+          </td>
+          <td class="py-3 px-4">
+            <a
+              href="{{ url_for('scan_details', scan_id=scan.id) }}"
+              class="text-blue-600 hover:text-blue-900 mr-4"
+              ><i class="fas fa-eye"></i
+            ></a>
+            <form
+              action="{{ url_for('delete_scan', scan_id=scan.id) }}"
+              method="POST"
+              class="inline-block"
+              onsubmit="return confirm('Bạn có chắc muốn xóa phiên quét này?');"
+            >
+              <button type="submit" class="text-red-600 hover:text-red-900">
+                <i class="fas fa-trash-alt"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+  // Cập nhật màu sắc cho trạng thái
+  function updateStatusColors() {
+    document.querySelectorAll("[data-status]").forEach((span) => {
+      const status = span.dataset.status;
+      if (status === "COMPLETED") {
+        span.classList.add("text-green-700", "bg-green-100");
+      } else if (status === "RUNNING") {
+        span.classList.add("text-yellow-700", "bg-yellow-100");
+      } else if (status === "PENDING") {
+        span.classList.add("text-gray-700", "bg-gray-100");
+      } else if (status === "FAILED") {
+        span.classList.add("text-red-700", "bg-red-100");
+      }
+    });
+  }
+
+  // Kiểm tra trạng thái các phiên đang chạy
+  function checkRunningScans() {
+    document
+      .querySelectorAll('[data-status="RUNNING"], [data-status="PENDING"]')
+      .forEach((span) => {
+        const scanId = span.id.split("-")[1];
+        fetch(`/status/${scanId}`)
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.status !== span.dataset.status) {
+              location.reload(); // Tải lại trang nếu trạng thái thay đổi
+            }
+          });
+      });
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    updateStatusColors();
+    setInterval(checkRunningScans, 5000); // Kiểm tra mỗi 5 giây
+
+    const form = document.getElementById("scan-form");
+    const messageDiv = document.getElementById("form-message");
+
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const url = document.getElementById("url-input").value;
+      fetch("/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: `url=${encodeURIComponent(url)}`,
+      })
+        .then((response) => response.json())
+        .then((data) => {
+          if (data.scan_id) {
+            messageDiv.innerHTML = `<div class="text-green-600">Phiên quét đã bắt đầu thành công! ID: ${data.scan_id}. Tải lại trang để xem...</div>`;
+            setTimeout(() => location.reload(), 2000);
+          } else {
+            messageDiv.innerHTML = `<div class="text-red-600">Lỗi: ${data.error}</div>`;
+          }
+        })
+        .catch((err) => {
+          messageDiv.innerHTML = `<div class="text-red-600">Đã xảy ra lỗi không mong muốn.</div>`;
+        });
+    });
+  });
+</script>
+{% endblock %}

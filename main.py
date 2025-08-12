@@ -1,6 +1,6 @@
 # main.py
 import requests
-import scanner  # Import module scanner của chúng ta
+import core.scanner as scanner  # Import module scanner của chúng ta
 import config   # Import module config
 
 def run_scanner():

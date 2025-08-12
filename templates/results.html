@@ -1,108 +1,181 @@
-<!DOCTYPE html>
-<html lang="vi">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Kết quả Quét</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-      body {
-        font-family: Arial, sans-serif;
-        margin: 40px;
-      }
-      .container {
-        max-width: 800px;
-        margin: auto;
-      }
-      .chart-container {
-        width: 50%;
-        margin: 20px auto;
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-top: 20px;
-      }
-      th,
-      td {
-        border: 1px solid #ddd;
-        padding: 8px;
-        text-align: left;
-      }
-      th {
-        background-color: #f2f2f2;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="container">
-      <h2>Kết quả Quét</h2>
-      <p><strong>Mục tiêu đã quét:</strong> {{ target }}</p>
+{% extends 'layout.html' %} {% block title %}Kết quả Quét #{{ scan.id }}{%
+endblock %} {% block content %}
+<div class="bg-white p-6 rounded-lg shadow-lg mb-8">
+  <h1 class="text-3xl font-bold text-gray-800">Báo cáo Quét #{{ scan.id }}</h1>
+  <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 text-gray-600">
+    <div>
+      <strong>URL Mục tiêu:</strong>
+      <span class="font-mono text-sm break-all">{{ scan.target_url }}</span>
+    </div>
+    <div>
+      <strong>Thời gian:</strong> {{
+      scan.created_at.strftime('%Y-%m-%d%H:%M:%S') }}
+    </div>
+    <div id="scan-status-details">
+      <strong>Trạng thái:</strong>
+      <span
+        class="px-2 py-1 font-semibold leading-tight rounded-full"
+        data-status="{{ scan.status }}"
+        >{{ scan.status }}</span
+      >
+    </div>
+  </div>
+</div>
 
-      <h3>Tổng quan Trực quan</h3>
-      <div class="chart-container">
-        <canvas id="myChart"></canvas>
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+  <div class="bg-white p-6 rounded-lg shadow-lg">
+    <h2 class="text-xl font-bold text-gray-800 mb-4">Phân loại Lỗ hổng</h2>
+    <canvas
+      id="vulnTypeChart"
+      data-url="{{ url_for('vulnerability_types_data', scan_id=scan.id) }}"
+    ></canvas>
+  </div>
+  <div class="bg-white p-6 rounded-lg shadow-lg">
+    <h2 class="text-xl font-bold text-gray-800 mb-4">Thống kê</h2>
+    <div class="space-y-4">
+      <div class="flex justify-between items-center p-4 bg-gray-50 rounded-lg">
+        <span class="font-semibold text-gray-700">Tổng số lỗ hổng</span>
+        <span class="text-2xl font-bold text-red-500"
+          >{{ vulnerabilities|length }}</span
+        >
       </div>
+    </div>
+  </div>
+</div>
 
-      <h3>Chi tiết Lỗ hổng</h3>
-      {% if results %}
-      <table>
+<div class="bg-white p-6 rounded-lg shadow-lg">
+  <h2 class="text-2xl font-bold text-gray-800 mb-4">
+    Danh sách Lỗ hổng Chi tiết
+  </h2>
+  <div class="overflow-x-auto">
+    <table class="min-w-full bg-white">
+      <thead class="bg-gray-800 text-white">
         <tr>
-          <th>Loại lỗ hổng</th>
-          <th>URL</th>
-          <th>Tham số bị ảnh hưởng</th>
+          <th class="text-left py-3 px-4 uppercase font-semibold text-sm">
+            Loại
+          </th>
+          <th class="text-left py-3 px-4 uppercase font-semibold text-sm">
+            URL Bị ảnh hưởng
+          </th>
+          <th class="text-left py-3 px-4 uppercase font-semibold text-sm">
+            Payload
+          </th>
+          <th class="text-left py-3 px-4 uppercase font-semibold text-sm">
+            Độ tin cậy AI
+          </th>
+          <th class="text-left py-3 px-4 uppercase font-semibold text-sm">
+            Bằng chứng
+          </th>
         </tr>
-        {% for vuln in results %}
+      </thead>
+      <tbody class="text-gray-700">
+        {% for vuln in vulnerabilities %}
+        <tr class="border-b">
+          <td class="py-3 px-4">
+            <span class="font-bold text-red-600">{{ vuln.vuln_type }}</span> ({{
+            vuln.method }})
+          </td>
+          <td class="py-3 px-4 font-mono text-sm break-all">{{ vuln.url }}</td>
+          <td class="py-3 px-4 font-mono text-sm break-all">
+            {{ vuln.payload }}
+          </td>
+          <td class="py-3 px-4">
+            <div class="w-full bg-gray-200 rounded-full h-2.5">
+              <div
+                class="bg-blue-600 h-2.5 rounded-full"
+                style="width: {{ (vuln.ai_confidence or 0) * 100 }}%"
+              ></div>
+            </div>
+            <span class="text-xs"
+              >{{ "%.0f"|format((vuln.ai_confidence or 0) * 100) }}%</span
+            >
+          </td>
+          <td class="py-3 px-4 font-mono text-xs break-all">
+            {{ vuln.evidence }}
+          </td>
+        </tr>
+        {% else %}
         <tr>
-          <td>{{ vuln.type }}</td>
-          <td>{{ vuln.url }}</td>
-          <td>{{ vuln.parameter }}</td>
+          <td colspan="5" class="text-center py-4">
+            Không tìm thấy lỗ hổng nào.
+          </td>
         </tr>
         {% endfor %}
-      </table>
-      {% else %}
-      <p>Không tìm thấy lỗ hổng nào trong các URL được kiểm tra.</p>
-      {% endif %}
-      <br />
-      <a href="/">Quay lại trang chủ</a>
-    </div>
+      </tbody>
+    </table>
+  </div>
+</div>
 
-    <script>
-      // Lấy dữ liệu thống kê đã được Flask truyền sang
-      const statsData = {{ stats | tojson }};
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    // Cập nhật màu trạng thái
+    document.querySelectorAll("[data-status]").forEach((span) => {
+      const status = span.dataset.status;
+      if (status === "COMPLETED")
+        span.classList.add("text-green-700", "bg-green-100");
+      else if (status === "RUNNING")
+        span.classList.add("text-yellow-700", "bg-yellow-100");
+      else if (status === "FAILED")
+        span.classList.add("text-red-700", "bg-red-100");
+    });
 
-      const ctx = document.getElementById('myChart').getContext('2d');
-      const myChart = new Chart(ctx, {
-          type: 'pie', // Loại biểu đồ: pie (tròn), bar (cột)
-          data: {
-              labels: Object.keys(statsData),
-              datasets: [{
-                  label: 'Số lượng Lỗ hổng',
-                  data: Object.values(statsData),
+    // Vẽ biểu đồ
+    // FIX: Get URL from data attribute and handle cases with no data
+    const chartCanvas = document.getElementById("vulnTypeChart");
+    const dataUrl = chartCanvas.dataset.url;
+    const ctx = chartCanvas.getContext("2d");
+
+    fetch(dataUrl)
+      .then((response) => response.json())
+      .then((data) => {
+        if (data.labels && data.labels.length > 0) {
+          new Chart(ctx, {
+            type: "doughnut",
+            data: {
+              labels: data.labels,
+              datasets: [
+                {
+                  label: "Số lượng",
+                  data: data.counts,
                   backgroundColor: [
-                      'rgba(255, 99, 132, 0.7)', // Màu cho SQLi
-                      'rgba(54, 162, 235, 0.7)'  // Màu cho XSS
+                    "rgba(255, 99, 132, 0.7)",
+                    "rgba(54, 162, 235, 0.7)",
+                    "rgba(255, 206, 86, 0.7)",
+                    "rgba(75, 192, 192, 0.7)",
+                    "rgba(153, 102, 255, 0.7)",
+                    "rgba(255, 159, 64, 0.7)",
                   ],
                   borderColor: [
-                      'rgba(255, 99, 132, 1)',
-                      'rgba(54, 162, 235, 1)'
+                    "rgba(255, 99, 132, 1)",
+                    "rgba(54, 162, 235, 1)",
+                    "rgba(255, 206, 86, 1)",
+                    "rgba(75, 192, 192, 1)",
+                    "rgba(153, 102, 255, 1)",
+                    "rgba(255, 159, 64, 1)",
                   ],
-                  borderWidth: 1
-              }]
-          },
-          options: {
+                  borderWidth: 1,
+                },
+              ],
+            },
+            options: {
               responsive: true,
               plugins: {
-                  legend: {
-                      position: 'top',
-                  },
-                  title: {
-                      display: true,
-                      text: 'Phân bố Lỗ hổng'
-                  }
-              }
-          }
+                legend: {
+                  position: "top",
+                },
+                title: {
+                  display: true,
+                  text: "Tỷ lệ các loại lỗ hổng được phát hiện",
+                },
+              },
+            },
+          });
+        } else {
+          const container = chartCanvas.parentElement;
+          container.innerHTML =
+            '<p class="text-center text-gray-500 py-8">Không có dữ liệu để vẽ biểu đồ.</p>';
+        }
       });
-    </script>
-  </body>
-</html>
+  });
+</script>
+{% endblock %}

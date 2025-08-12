@@ -1,69 +1,87 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
-import os # MỚI
-
-# Lấy đường dẫn thư mục hiện tại
-basedir = os.path.abspath(os.path.dirname(__file__))
+from config import Config
+import os
 
 app = Flask(__name__)
-# Cấu hình đường dẫn đến file CSDL SQLite
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'scanner.db')
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config.from_object(Config)
 
-# Khởi tạo đối tượng CSDL
 db = SQLAlchemy(app)
 
 # --- DATABASE MODELS ---
 class Scan(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     target_url = db.Column(db.String(500), nullable=False)
-    status = db.Column(db.String(50), default='PENDING', nullable=False)
+    status = db.Column(db.String(255), default='PENDING', nullable=False)
     created_at = db.Column(db.DateTime, server_default=db.func.now())
-    # Tạo mối quan hệ với bảng Vulnerability
-    vulnerabilities = db.relationship('Vulnerability', backref='scan', lazy=True)
+    vulnerabilities = db.relationship('Vulnerability', backref='scan', lazy='dynamic', cascade="all, delete-orphan")
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'target_url': self.target_url,
+            'status': self.status,
+            'created_at': self.created_at.isoformat(),
+            'vuln_count': self.vulnerabilities.count()
+        }
 
 class Vulnerability(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    scan_id = db.Column(db.Integer, db.ForeignKey('scan.id'), nullable=False)
+    scan_id = db.Column(db.Integer, db.ForeignKey('scan.id', ondelete='CASCADE'), nullable=False)
     url = db.Column(db.String(500), nullable=False)
     vuln_type = db.Column(db.String(100), nullable=False)
-    parameter = db.Column(db.String(100), nullable=True)
+    payload = db.Column(db.String(500), nullable=False)
+    evidence = db.Column(db.Text, nullable=True)
+    ai_confidence = db.Column(db.Float, nullable=True)
+    method = db.Column(db.String(10), nullable=False, default='GET')
 
-# app.py (thay thế các route cũ)
-
+# --- FLASK ROUTES ---
 @app.route('/')
 def index():
-    # Lấy lịch sử các lần quét để hiển thị
     scans = Scan.query.order_by(Scan.created_at.desc()).all()
     return render_template('index.html', scans=scans)
 
 @app.route('/scan', methods=['POST'])
 def start_scan():
+    # SỬA LỖI: Import tác vụ Celery BÊN TRONG hàm để tránh import vòng
+    from task import run_scan_task
+    
     target_url = request.form.get('url')
     if not target_url:
-        return "URL is required", 400
+        return jsonify({'error': 'URL is required'}), 400
 
-    # 1. Tạo một bản ghi mới trong CSDL cho lần quét này
     new_scan = Scan(target_url=target_url, status='PENDING')
     db.session.add(new_scan)
     db.session.commit()
 
-    # 2. Giao việc cho Celery với ID của lần quét
     run_scan_task.delay(new_scan.id)
-
-    return jsonify({'scan_id': new_scan.id})
+    
+    return jsonify({'message': 'Scan started successfully', 'scan_id': new_scan.id})
 
 @app.route('/scan/<int:scan_id>')
 def scan_details(scan_id):
-    # Lấy thông tin chi tiết của một lần quét từ CSDL
     scan = Scan.query.get_or_404(scan_id)
-    return render_template('results.html', scan=scan)
+    vulnerabilities = scan.vulnerabilities.all()
+    return render_template('results.html', scan=scan, vulnerabilities=vulnerabilities)
 
 @app.route('/status/<int:scan_id>')
 def scan_status(scan_id):
-    # API để frontend hỏi trạng thái, lấy trực tiếp từ CSDL
     scan = Scan.query.get_or_404(scan_id)
     return jsonify({'status': scan.status})
+    
+@app.route('/scan/delete/<int:scan_id>', methods=['POST'])
+def delete_scan(scan_id):
+    scan = Scan.query.get_or_404(scan_id)
+    db.session.delete(scan)
+    db.session.commit()
+    return redirect(url_for('index'))
 
-
-from task import run_scan_task # Import tác vụ chạy nền từ tasks.py
+@app.route('/data/vulnerability_types/<int:scan_id>')
+def vulnerability_types_data(scan_id):
+    scan = Scan.query.get_or_404(scan_id)
+    vuln_counts = db.session.query(Vulnerability.vuln_type, db.func.count(Vulnerability.vuln_type)).filter_by(scan_id=scan.id).group_by(Vulnerability.vuln_type).all()
+    data = {
+        'labels': [item[0] for item in vuln_counts],
+        'counts': [item[1] for item in vuln_counts]
+    }
+    return jsonify(data)

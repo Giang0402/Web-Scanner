@@ -1,52 +1,97 @@
-# tasks.py (Phiên bản nâng cấp với CSDL)
+# QUAN TRỌNG: Dòng này phải được thực thi ĐẦU TIÊN để Celery worker hoạt động với eventlet
+import eventlet
+eventlet.monkey_patch()
+
 from celery import Celery
+from app import app, db, Scan, Vulnerability # Import chính
+from core.scanner import Scanner
+from core.crawler import Crawler
 import requests
-import scanner
-# MỚI: Import app và db để tác vụ có thể tương tác với CSDL
-from app import app, db, Scan, Vulnerability
-from concurrent.futures import ThreadPoolExecutor
 
-celery = Celery('tasks', broker='redis://localhost:6379/0', backend='redis://localhost:6379/0')
+# Khởi tạo Celery với context của ứng dụng Flask
+celery = Celery(
+    app.import_name,
+    backend=app.config['CELERY_RESULT_BACKEND'],
+    broker=app.config['CELERY_BROKER_URL']
+)
+celery.conf.update(app.config)
 
-@celery.task
-def run_scan_task(scan_id):
-    """Tác vụ chạy nền cuối cùng: có CSDL, crawl đệ quy và quét song song."""
-    with app.app_context():
-        scan = Scan.query.get(scan_id)
-        if not scan: return
+class ContextTask(celery.Task):
+    def __call__(self, *args, **kwargs):
+        with app.app_context():
+            return self.run(*args, **kwargs)
 
-        scan.status = 'RUNNING'
+celery.Task = ContextTask
+
+
+@celery.task(bind=True)
+def run_scan_task(self, scan_id):
+    """
+    Tác vụ Celery chính để chạy quá trình quét.
+    """
+    scan = Scan.query.get(scan_id)
+    if not scan:
+        print(f"[ERROR] Không tìm thấy Scan với ID: {scan_id}")
+        return
+
+    try:
+        # Cập nhật trạng thái ban đầu
+        scan.status = 'INITIALIZING'
         db.session.commit()
 
         session = requests.Session()
-        success, _ = scanner.login_and_set_security(session)
-        if not success:
-            scan.status = 'FAILED'
+        scanner = Scanner(session)
+
+        # --- BƯỚC KIỂM TRA QUAN TRỌNG NHẤT ---
+        print("[INFO] Bắt đầu đăng nhập và thiết lập security level...")
+        login_result = scanner.login()
+
+        # Kiểm tra chặt chẽ cả 'success' và 'security_set'
+        if not login_result.get('success') or not login_result.get('security_set'):
+            error_message = login_result.get('message', 'Lỗi không xác định khi đăng nhập hoặc thiết lập security.')
+            print(f"[CRITICAL] {error_message}")
+            scan.status = f'FAILED: {error_message}'
             db.session.commit()
-            return
+            return # Dừng tác vụ ngay lập tức
 
-        # 1. Crawl đệ quy để lấy danh sách link
-        links_to_scan = scanner.crawl(session, scan.target_url, max_depth=1) # Giới hạn độ sâu
-        print(f"[*] Tìm thấy {len(links_to_scan)} link để quét song song.")
+        print(f"[SUCCESS] {login_result.get('message')}")
 
-        # 2. Quét các link song song bằng ThreadPoolExecutor
-        def scan_and_save(link):
-            results = scanner.scan_url(session, link)
-            for vuln_data in results:
-                # Cần app_context ở đây vì mỗi thread là một môi trường riêng
-                with app.app_context():
-                    vulnerability = Vulnerability(
-                        scan_id=scan.id,
-                        url=vuln_data['url'],
-                        vuln_type=vuln_data['type'],
-                        parameter=vuln_data.get('parameter')
-                    )
-                    db.session.add(vulnerability)
+        # --- Bắt đầu Crawl ---
+        scan.status = 'CRAWLING'
+        db.session.commit()
+        print(f"[INFO] Bắt đầu crawl trang: {scan.target_url}")
+        crawler = Crawler(session, scan.target_url)
+        targets_to_scan = crawler.crawl(max_depth=2)
+        print(f"[INFO] Crawl hoàn tất. Tìm thấy {len(targets_to_scan)} mục tiêu.")
 
-        # Chạy tối đa 5 thread cùng lúc
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            executor.map(scan_and_save, links_to_scan)
-        
-        db.session.commit() # Commit tất cả các lỗ hổng đã tìm thấy
+        # --- Bắt đầu Scan ---
+        scan.status = 'SCANNING'
+        db.session.commit()
+        print(f"[INFO] Bắt đầu quét các lỗ hổng...")
+        vulnerabilities = scanner.run_scan(targets_to_scan)
+        print(f"[INFO] Quét hoàn tất. Tìm thấy {len(vulnerabilities)} lỗ hổng.")
+
+        # --- Lưu kết quả ---
+        if vulnerabilities:
+            for vuln in vulnerabilities:
+                new_vuln = Vulnerability(
+                    scan_id=scan.id,
+                    url=vuln['url'],
+                    vuln_type=vuln['type'],
+                    payload=vuln['payload'],
+                    evidence=vuln.get('evidence'),
+                    ai_confidence=vuln.get('ai_confidence'),
+                    method=vuln.get('method', 'GET')
+                )
+                db.session.add(new_vuln)
+
         scan.status = 'COMPLETED'
         db.session.commit()
+        print(f"[SUCCESS] Hoàn thành quét cho Scan ID: {scan_id}")
+
+    except Exception as e:
+        print(f"[FATAL ERROR] Đã xảy ra lỗi không mong muốn trong tác vụ quét: {e}")
+        scan.status = 'FAILED: Lỗi hệ thống'
+        db.session.commit()
+        import traceback
+        traceback.print_exc()
