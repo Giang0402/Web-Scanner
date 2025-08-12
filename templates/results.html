@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kết quả Quét</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 40px;
+      }
+      .container {
+        max-width: 800px;
+        margin: auto;
+      }
+      .chart-container {
+        width: 50%;
+        margin: 20px auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+      }
+      th,
+      td {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+      }
+      th {
+        background-color: #f2f2f2;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h2>Kết quả Quét</h2>
+      <p><strong>Mục tiêu đã quét:</strong> {{ target }}</p>
+
+      <h3>Tổng quan Trực quan</h3>
+      <div class="chart-container">
+        <canvas id="myChart"></canvas>
+      </div>
+
+      <h3>Chi tiết Lỗ hổng</h3>
+      {% if results %}
+      <table>
+        <tr>
+          <th>Loại lỗ hổng</th>
+          <th>URL</th>
+          <th>Tham số bị ảnh hưởng</th>
+        </tr>
+        {% for vuln in results %}
+        <tr>
+          <td>{{ vuln.type }}</td>
+          <td>{{ vuln.url }}</td>
+          <td>{{ vuln.parameter }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+      {% else %}
+      <p>Không tìm thấy lỗ hổng nào trong các URL được kiểm tra.</p>
+      {% endif %}
+      <br />
+      <a href="/">Quay lại trang chủ</a>
+    </div>
+
+    <script>
+      // Lấy dữ liệu thống kê đã được Flask truyền sang
+      const statsData = {{ stats | tojson }};
+
+      const ctx = document.getElementById('myChart').getContext('2d');
+      const myChart = new Chart(ctx, {
+          type: 'pie', // Loại biểu đồ: pie (tròn), bar (cột)
+          data: {
+              labels: Object.keys(statsData),
+              datasets: [{
+                  label: 'Số lượng Lỗ hổng',
+                  data: Object.values(statsData),
+                  backgroundColor: [
+                      'rgba(255, 99, 132, 0.7)', // Màu cho SQLi
+                      'rgba(54, 162, 235, 0.7)'  // Màu cho XSS
+                  ],
+                  borderColor: [
+                      'rgba(255, 99, 132, 1)',
+                      'rgba(54, 162, 235, 1)'
+                  ],
+                  borderWidth: 1
+              }]
+          },
+          options: {
+              responsive: true,
+              plugins: {
+                  legend: {
+                      position: 'top',
+                  },
+                  title: {
+                      display: true,
+                      text: 'Phân bố Lỗ hổng'
+                  }
+              }
+          }
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Web Vulnerability Scanner</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 40px;
+      }
+      .container {
+        max-width: 600px;
+        margin: auto;
+        padding: 20px;
+        border: 1px solid #ccc;
+        border-radius: 10px;
+      }
+      input[type="url"] {
+        width: 95%;
+        padding: 10px;
+        margin-bottom: 10px;
+      }
+      button {
+        padding: 10px 20px;
+        background-color: #007bff;
+        color: white;
+        border: none;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h2>Chương trình Phân tích Lỗ hổng Web</h2>
+      <form action="/scan" method="POST">
+        <label for="url">Nhập URL mục tiêu:</label>
+        <input
+          type="url"
+          id="url"
+          name="url"
+          placeholder="http://example.com"
+          required
+        />
+        <button type="submit">Bắt đầu quét</button>
+      </form>
+    </div>
+  </body>
+</html>
