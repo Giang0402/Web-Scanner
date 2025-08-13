@@ -4,5 +4,9 @@ requests
 beautifulsoup4
 celery
 redis
+celery[gevent]
 eventlet
 python-dotenv
+playwright 
+psycopg2-binary
+goto-statement

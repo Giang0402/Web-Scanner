@@ -1,70 +1,86 @@
+import difflib
 from bs4 import BeautifulSoup
 
 class AIAnalyzer:
     """
-    Module AI được nâng cấp toàn diện, tinh chỉnh để nhận biết các dấu hiệu
-    lỗ hổng đặc trưng của môi trường DVWA mà không cần so sánh.
+    Engine Phân tích được thiết kế lại, tập trung vào phương pháp so sánh
+    sự khác biệt (Differential Analysis) để phát hiện các bất thường.
     """
+
     def __init__(self):
-        self.sql_errors = [
-            "you have an error in your sql syntax", "warning: mysql", 
-            "unclosed quotation mark", "syntax error", "unknown column"
-        ]
-        self.cmd_injection_indicators = ["uid=", "gid=", "groups=", "etc/passwd", "root:x:0:0", "64 bytes from"]
-        self.dir_traversal_indicators = [
-            "root:x:0:0", "[boot loader]", "users on this computer", 
-            "[fonts]", "for 16-bit app support"
+        # Giữ lại một số chuỗi lỗi SQL/Server rõ ràng để phát hiện nhanh
+        self.quick_error_indicators = [
+            # SQL Errors
+            "you have an error in your sql syntax", "warning: mysql",
+            "unclosed quotation mark", "syntax error", "unknown column",
+            "ora-00933", "invalid sql statement", "odbc driver error",
+            # Path Traversal / File Inclusion Errors
+            "failed to open stream", "no such file or directory", "include(",
+            # Command Injection Indicators (nếu output trực tiếp)
+            "permission denied", "command not found"
         ]
 
-    def analyze(self, response, payload, vuln_type):
-        """
-        Phân tích phản hồi và trả về (is_vulnerable, evidence, confidence_score).
-        """
-        content = response.text.lower()
-        confidence = 0.0
-        evidence = ""
+    def _get_text_from_html(self, html_content):
+        """Trích xuất văn bản thuần túy từ HTML để so sánh, loại bỏ script và style."""
+        soup = BeautifulSoup(html_content, 'html.parser')
+        for script in soup(["script", "style"]):
+            script.extract()
+        return " ".join(soup.get_text().split())
 
+    def analyze_response_for_vuln(self, base_response, test_response, payload, vuln_type):
+        """
+        Phân tích và so sánh hai phản hồi để tìm dấu hiệu của lỗ hổng.
+
+        :param base_response: Phản hồi HTTP gốc (không có payload).
+        :param test_response: Phản hồi HTTP sau khi tiêm payload.
+        :param payload: Payload đã được sử dụng.
+        :param vuln_type: Loại lỗ hổng đang được kiểm tra ('xss', 'sqli', 'cmdi', etc.).
+        :return: Tuple (is_vulnerable, evidence, confidence_score).
+        """
+        
+        test_response_text = test_response.text.lower()
+        
+        # 1. Kiểm tra các dấu hiệu lỗi rõ ràng (phát hiện nhanh)
+        for error in self.quick_error_indicators:
+            if error in test_response_text:
+                return (True, f"Phản hồi chứa chuỗi lỗi kinh điển: '{error}'", 0.95)
+
+        # 2. Kiểm tra sự phản chiếu trực tiếp của payload (chủ yếu cho XSS)
         if vuln_type == 'xss':
-            if payload.lower() in content:
-                confidence = 0.98
-                evidence = f"Payload XSS '{payload}' được phản chiếu lại trong trang."
-                return True, evidence, confidence
+            # Nếu payload xuất hiện nguyên vẹn trong HTML, đó là dấu hiệu XSS rất mạnh
+            if payload.lower() in test_response_text:
+                 return (True, f"Payload '{payload}' được phản chiếu trực tiếp trong phản hồi.", 0.90)
 
-        elif vuln_type == 'sqli':
-            for error in self.sql_errors:
-                if error in content:
-                    confidence = 0.95
-                    evidence = f"Tìm thấy thông báo lỗi SQL: '{error}'."
-                    return True, evidence, confidence
+        # 3. Phân tích so sánh sự khác biệt (Differential Analysis)
+
+        # So sánh mã trạng thái HTTP
+        if base_response.status_code != test_response.status_code:
+            # Ví dụ: trang đang hoạt động (200) bỗng dưng lỗi (500) là dấu hiệu mạnh
+            if base_response.status_code == 200 and test_response.status_code >= 500:
+                 return (True, f"Mã trạng thái thay đổi từ {base_response.status_code} thành {test_response.status_code}, cho thấy lỗi server.", 0.85)
+            # Một số WAF (Web Application Firewall) có thể trả về 403 khi phát hiện payload
+            if base_response.status_code == 200 and test_response.status_code == 403:
+                 return (True, f"Mã trạng thái thay đổi thành 403 (Forbidden), có thể do WAF chặn payload.", 0.60)
+
+
+        # So sánh nội dung HTML
+        base_text = self._get_text_from_html(base_response.text)
+        test_text = self._get_text_from_html(test_response.text)
+        
+        # Nếu không có sự khác biệt nào về nội dung, gần như chắc chắn không có lỗ hổng
+        if base_text == test_text:
+            return (False, None, 0.0)
             
-            if '<pre>id' in content and 'surname' in content and 'first name' in content:
-                confidence = 0.9
-                evidence = "Phản hồi chứa bảng kết quả (ID, First name, Surname), dấu hiệu của SQLi thành công."
-                return True, evidence, confidence
+        # Sử dụng difflib để tính toán tỷ lệ khác biệt
+        diff_ratio = difflib.SequenceMatcher(None, base_text, test_text).ratio()
 
-        elif vuln_type == 'cmdi':
-            soup = BeautifulSoup(response.text, 'html.parser')
-            pre_content = "".join(tag.text for tag in soup.find_all('pre')).lower()
-            if pre_content:
-                for indicator in self.cmd_injection_indicators:
-                    if indicator in pre_content:
-                        confidence = 0.9
-                        evidence = f"Tìm thấy dấu hiệu thực thi lệnh '{indicator}' bên trong thẻ <pre>."
-                        return True, evidence, confidence
-                if 'total' in pre_content and 'drwxr-xr-x' in pre_content:
-                    confidence = 0.8
-                    evidence = "Phản hồi chứa cấu trúc thư mục, có thể là kết quả của lệnh 'ls'."
-                    return True, evidence, confidence
+        # Nếu nội dung gần như giống hệt nhau, bỏ qua
+        if diff_ratio > 0.98:
+            return (False, None, 0.0)
 
-        elif vuln_type == 'dirtraversal' or vuln_type == 'fi': # Hỗ trợ cả file inclusion
-            for indicator in self.dir_traversal_indicators:
-                if indicator in content:
-                    confidence = 0.95
-                    evidence = f"Tìm thấy nội dung file hệ thống nhạy cảm: '{indicator}'."
-                    return True, evidence, confidence
-            if "warning: include(" in content and ("failed to open stream" in content or "no such file or directory" in content):
-                confidence = 0.7
-                evidence = "Tìm thấy lỗi PHP 'include failed to open stream', dấu hiệu của nỗ lực tấn công File Inclusion."
-                return True, evidence, confidence
-            
-        return False, None, 0.0
+        # Nếu có sự khác biệt đáng kể, đây là một dấu hiệu cần xem xét
+        # Ngưỡng này có thể cần được tinh chỉnh sau khi thử nghiệm thực tế
+        if diff_ratio < 0.95: 
+            return (True, f"Nội dung phản hồi thay đổi đáng kể (tỷ lệ tương đồng: {diff_ratio:.2f}) sau khi tiêm payload.", 0.75)
+
+        return (False, None, 0.0)

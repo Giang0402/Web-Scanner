@@ -47,135 +47,140 @@ endblock %} {% block content %}
   <h2 class="text-2xl font-bold text-gray-800 mb-4">
     Danh sách Lỗ hổng Chi tiết
   </h2>
-  <div class="overflow-x-auto">
-    <table class="min-w-full bg-white">
-      <thead class="bg-gray-800 text-white">
-        <tr>
-          <th class="text-left py-3 px-4 uppercase font-semibold text-sm">
-            Loại
-          </th>
-          <th class="text-left py-3 px-4 uppercase font-semibold text-sm">
-            URL Bị ảnh hưởng
-          </th>
-          <th class="text-left py-3 px-4 uppercase font-semibold text-sm">
-            Payload
-          </th>
-          <th class="text-left py-3 px-4 uppercase font-semibold text-sm">
-            Độ tin cậy AI
-          </th>
-          <th class="text-left py-3 px-4 uppercase font-semibold text-sm">
-            Bằng chứng
-          </th>
-        </tr>
-      </thead>
-      <tbody class="text-gray-700">
-        {% for vuln in vulnerabilities %}
-        <tr class="border-b">
-          <td class="py-3 px-4">
-            <span class="font-bold text-red-600">{{ vuln.vuln_type }}</span> ({{
-            vuln.method }})
-          </td>
-          <td class="py-3 px-4 font-mono text-sm break-all">{{ vuln.url }}</td>
-          <td class="py-3 px-4 font-mono text-sm break-all">
+  <div class="space-y-6">
+    {% for vuln in vulnerabilities %}
+    <div
+      class="border rounded-lg overflow-hidden transition-shadow duration-300 hover:shadow-xl"
+    >
+      <div
+        class="bg-gray-100 p-4 flex justify-between items-center border-b cursor-pointer"
+        onclick="toggleDetails('vuln-body-{{ vuln.id }}')"
+      >
+        <div>
+          <span class="font-bold text-lg text-red-600"
+            >{{ vuln.vuln_type }}</span
+          >
+          <span class="text-gray-600">({{ vuln.method }})</span>
+        </div>
+        <div class="text-right">
+          <span class="font-semibold">Độ tin cậy AI:</span>
+          <span class="text-blue-600 font-bold"
+            >{{ "%.0f"|format((vuln.ai_confidence or 0) * 100) }}%</span
+          >
+        </div>
+      </div>
+      <div id="vuln-body-{{ vuln.id }}" class="p-4 space-y-4">
+        <div>
+          <strong class="text-gray-700">URL Bị ảnh hưởng:</strong>
+          <p class="font-mono text-sm break-all bg-gray-50 p-2 rounded mt-1">
+            {{ vuln.url }}
+          </p>
+        </div>
+        <div>
+          <strong class="text-gray-700">Payload được sử dụng:</strong>
+          <p class="font-mono text-sm break-all bg-gray-50 p-2 rounded mt-1">
             {{ vuln.payload }}
-          </td>
-          <td class="py-3 px-4">
-            <div class="w-full bg-gray-200 rounded-full h-2.5">
-              <div
-                class="bg-blue-600 h-2.5 rounded-full"
-                style="width: {{ (vuln.ai_confidence or 0) * 100 }}%"
-              ></div>
-            </div>
-            <span class="text-xs"
-              >{{ "%.0f"|format((vuln.ai_confidence or 0) * 100) }}%</span
-            >
-          </td>
-          <td class="py-3 px-4 font-mono text-xs break-all">
+          </p>
+        </div>
+        <div>
+          <strong class="text-gray-700">Bằng chứng (Evidence):</strong>
+          <p class="italic text-gray-800 bg-gray-50 p-2 rounded mt-1">
             {{ vuln.evidence }}
-          </td>
-        </tr>
-        {% else %}
-        <tr>
-          <td colspan="5" class="text-center py-4">
-            Không tìm thấy lỗ hổng nào.
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+          </p>
+        </div>
+        <div>
+          <strong class="text-gray-700">Gợi ý Khắc phục:</strong>
+          <p
+            class="text-sm text-gray-800 bg-green-50 p-3 rounded border-l-4 border-green-500 mt-1"
+          >
+            {{ get_remediation_advice(vuln.vuln_type) }}
+          </p>
+        </div>
+      </div>
+    </div>
+    {% else %}
+    <div class="text-center py-8">
+      <p class="text-gray-500 text-lg">
+        Tuyệt vời! Không tìm thấy lỗ hổng nào trong phiên quét này.
+      </p>
+    </div>
+    {% endfor %}
   </div>
 </div>
 
 <script>
+  function toggleDetails(elementId) {
+    const element = document.getElementById(elementId);
+    if (element) {
+      element.classList.toggle("hidden");
+    }
+  }
+
   document.addEventListener("DOMContentLoaded", () => {
-    // Cập nhật màu trạng thái
+    // Cập nhật màu trạng thái (giữ nguyên logic)
     document.querySelectorAll("[data-status]").forEach((span) => {
-      const status = span.dataset.status;
+      const status = span.dataset.status.toUpperCase();
+      span.className = "px-2 py-1 font-semibold leading-tight rounded-full"; // Reset
       if (status === "COMPLETED")
         span.classList.add("text-green-700", "bg-green-100");
-      else if (status === "RUNNING")
+      else if (status === "SCANNING" || status === "CRAWLING")
         span.classList.add("text-yellow-700", "bg-yellow-100");
-      else if (status === "FAILED")
+      else if (status === "PENDING" || status === "INITIALIZING")
+        span.classList.add("text-gray-700", "bg-gray-100");
+      else if (status.startsWith("FAILED"))
         span.classList.add("text-red-700", "bg-red-100");
     });
 
-    // Vẽ biểu đồ
-    // FIX: Get URL from data attribute and handle cases with no data
+    // Vẽ biểu đồ (giữ nguyên logic)
     const chartCanvas = document.getElementById("vulnTypeChart");
-    const dataUrl = chartCanvas.dataset.url;
-    const ctx = chartCanvas.getContext("2d");
+    if (chartCanvas) {
+      const dataUrl = chartCanvas.dataset.url;
+      const ctx = chartCanvas.getContext("2d");
 
-    fetch(dataUrl)
-      .then((response) => response.json())
-      .then((data) => {
-        if (data.labels && data.labels.length > 0) {
-          new Chart(ctx, {
-            type: "doughnut",
-            data: {
-              labels: data.labels,
-              datasets: [
-                {
-                  label: "Số lượng",
-                  data: data.counts,
-                  backgroundColor: [
-                    "rgba(255, 99, 132, 0.7)",
-                    "rgba(54, 162, 235, 0.7)",
-                    "rgba(255, 206, 86, 0.7)",
-                    "rgba(75, 192, 192, 0.7)",
-                    "rgba(153, 102, 255, 0.7)",
-                    "rgba(255, 159, 64, 0.7)",
-                  ],
-                  borderColor: [
-                    "rgba(255, 99, 132, 1)",
-                    "rgba(54, 162, 235, 1)",
-                    "rgba(255, 206, 86, 1)",
-                    "rgba(75, 192, 192, 1)",
-                    "rgba(153, 102, 255, 1)",
-                    "rgba(255, 159, 64, 1)",
-                  ],
-                  borderWidth: 1,
-                },
-              ],
-            },
-            options: {
-              responsive: true,
-              plugins: {
-                legend: {
-                  position: "top",
-                },
-                title: {
-                  display: true,
-                  text: "Tỷ lệ các loại lỗ hổng được phát hiện",
+      fetch(dataUrl)
+        .then((response) => response.json())
+        .then((data) => {
+          if (data.labels && data.labels.length > 0) {
+            new Chart(ctx, {
+              type: "doughnut",
+              data: {
+                labels: data.labels,
+                datasets: [
+                  {
+                    label: "Số lượng",
+                    data: data.counts,
+                    backgroundColor: [
+                      "rgba(239, 68, 68, 0.7)", // red-500
+                      "rgba(249, 115, 22, 0.7)", // orange-500
+                      "rgba(234, 179, 8, 0.7)", // yellow-500
+                      "rgba(59, 130, 246, 0.7)", // blue-500
+                      "rgba(139, 92, 246, 0.7)", // violet-500
+                      "rgba(236, 72, 153, 0.7)", // pink-500
+                    ],
+                    borderColor: "#ffffff",
+                    borderWidth: 2,
+                  },
+                ],
+              },
+              options: {
+                responsive: true,
+                plugins: {
+                  legend: {
+                    position: "top",
+                  },
+                  title: {
+                    display: false,
+                  },
                 },
               },
-            },
-          });
-        } else {
-          const container = chartCanvas.parentElement;
-          container.innerHTML =
-            '<p class="text-center text-gray-500 py-8">Không có dữ liệu để vẽ biểu đồ.</p>';
-        }
-      });
+            });
+          } else {
+            const container = chartCanvas.parentElement;
+            container.innerHTML =
+              '<p class="text-center text-gray-500 py-8">Không có dữ liệu để vẽ biểu đồ.</p>';
+          }
+        });
+    }
   });
 </script>
 {% endblock %}

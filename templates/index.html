@@ -1,5 +1,5 @@
-{% extends 'layout.html' %} {% block title %}Dashboard - Web Scanner{% endblock
-%} {% block content %}
+{% extends 'layout.html' %} {% block title %}Dashboard - Web Scanner{%endblock%}
+{% block content %}
 <div class="bg-white p-6 rounded-lg shadow-lg mb-8">
   <h1 class="text-2xl font-bold text-gray-800 mb-4">
     Bắt đầu một phiên quét mới
@@ -8,8 +8,9 @@
     <div class="flex items-center border-b-2 border-blue-500 py-2">
       <input
         id="url-input"
+        name="url"
         class="appearance-none bg-transparent border-none w-full text-gray-700 mr-3 py-1 px-2 leading-tight focus:outline-none"
-        type="text"
+        type="url"
         placeholder="http://example.com"
         aria-label="Target URL"
         required
@@ -20,6 +21,65 @@
       >
         Bắt đầu quét
       </button>
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-6 mt-6">
+      <div>
+        <h2 class="text-lg font-semibold text-gray-700">
+          Tùy chọn Xác thực (Tùy chọn)
+        </h2>
+        <div class="mt-2">
+          <label
+            for="auth_cookie"
+            class="block text-sm font-medium text-gray-600"
+            >Session Cookie</label
+          >
+          <input
+            type="text"
+            name="auth_cookie"
+            id="auth_cookie"
+            class="w-full mt-1 p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500"
+            placeholder="ví dụ: PHPSESSID=abcdef12345"
+          />
+        </div>
+        <div class="mt-2">
+          <label
+            for="auth_header"
+            class="block text-sm font-medium text-gray-600"
+            >Authorization Header</label
+          >
+          <input
+            type="text"
+            name="auth_header"
+            id="auth_header"
+            class="w-full mt-1 p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500"
+            placeholder="ví dụ: Bearer eyJhbGciOiJIU..."
+          />
+        </div>
+      </div>
+
+      <div>
+        <h2 class="text-lg font-semibold text-gray-700">Chính sách Quét</h2>
+        <div class="grid grid-cols-2 gap-2 mt-2">
+          {% for plugin_name in available_plugins %}
+          <div>
+            <input
+              type="checkbox"
+              id="plugin_{{ plugin_name }}"
+              name="plugins"
+              value="{{ plugin_name }}"
+              class="rounded text-blue-500 focus:ring-blue-500"
+              checked
+            />
+            <label for="plugin_{{ plugin_name }}" class="ml-2 uppercase"
+              >{{ plugin_name }}</label
+            >
+          </div>
+          {% else %}
+          <p class="text-gray-500">Không tìm thấy plugin nào.</p>
+          {% endfor %}
+        </div>
+      </div>
     </div>
   </form>
   <div id="form-message" class="mt-4"></div>
@@ -96,57 +156,58 @@
 </div>
 
 <script>
-  // Cập nhật màu sắc cho trạng thái
   function updateStatusColors() {
     document.querySelectorAll("[data-status]").forEach((span) => {
-      const status = span.dataset.status;
-      if (status === "COMPLETED") {
+      const status = span.dataset.status.toUpperCase();
+      span.className = "px-2 py-1 font-semibold leading-tight rounded-full"; // Reset classes
+      if (status === "COMPLETED")
         span.classList.add("text-green-700", "bg-green-100");
-      } else if (status === "RUNNING") {
+      else if (status === "SCANNING" || status === "CRAWLING")
         span.classList.add("text-yellow-700", "bg-yellow-100");
-      } else if (status === "PENDING") {
+      else if (status === "PENDING" || status === "INITIALIZING")
         span.classList.add("text-gray-700", "bg-gray-100");
-      } else if (status === "FAILED") {
+      else if (status.startsWith("FAILED"))
         span.classList.add("text-red-700", "bg-red-100");
-      }
     });
   }
 
-  // Kiểm tra trạng thái các phiên đang chạy
   function checkRunningScans() {
-    document
-      .querySelectorAll('[data-status="RUNNING"], [data-status="PENDING"]')
-      .forEach((span) => {
+    document.querySelectorAll("[data-status]").forEach((span) => {
+      const status = span.dataset.status.toUpperCase();
+      if (status !== "COMPLETED" && !status.startsWith("FAILED")) {
         const scanId = span.id.split("-")[1];
         fetch(`/status/${scanId}`)
           .then((response) => response.json())
           .then((data) => {
             if (data.status !== span.dataset.status) {
-              location.reload(); // Tải lại trang nếu trạng thái thay đổi
+              location.reload();
             }
           });
-      });
+      }
+    });
   }
 
   document.addEventListener("DOMContentLoaded", () => {
     updateStatusColors();
-    setInterval(checkRunningScans, 5000); // Kiểm tra mỗi 5 giây
+    setInterval(checkRunningScans, 5000);
 
     const form = document.getElementById("scan-form");
     const messageDiv = document.getElementById("form-message");
 
     form.addEventListener("submit", (e) => {
       e.preventDefault();
-      const url = document.getElementById("url-input").value;
+      const formData = new FormData(form);
+      const urlEncodedData = new URLSearchParams(formData).toString();
+
       fetch("/scan", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: `url=${encodeURIComponent(url)}`,
+        body: urlEncodedData,
       })
         .then((response) => response.json())
         .then((data) => {
           if (data.scan_id) {
-            messageDiv.innerHTML = `<div class="text-green-600">Phiên quét đã bắt đầu thành công! ID: ${data.scan_id}. Tải lại trang để xem...</div>`;
+            messageDiv.innerHTML = `<div class="text-green-600">Phiên quét đã bắt đầu thành công! ID: ${data.scan_id}. Đang tải lại...</div>`;
             setTimeout(() => location.reload(), 2000);
           } else {
             messageDiv.innerHTML = `<div class="text-red-600">Lỗi: ${data.error}</div>`;
@@ -154,6 +215,7 @@
         })
         .catch((err) => {
           messageDiv.innerHTML = `<div class="text-red-600">Đã xảy ra lỗi không mong muốn.</div>`;
+          console.error(err);
         });
     });
   });
