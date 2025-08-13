@@ -1,14 +1,12 @@
-# QUAN TRỌNG: Dòng này phải được thực thi ĐẦU TIÊN để Celery worker hoạt động với eventlet
 import eventlet
 eventlet.monkey_patch()
 
 from celery import Celery
-from app import app, db, Scan, Vulnerability # Import chính
+from app import app, db, Scan, Vulnerability
 from core.scanner import Scanner
 from core.crawler import Crawler
 import requests
 
-# Khởi tạo Celery với context của ứng dụng Flask
 celery = Celery(
     app.import_name,
     backend=app.config['CELERY_RESULT_BACKEND'],
@@ -23,62 +21,68 @@ class ContextTask(celery.Task):
 
 celery.Task = ContextTask
 
-
 @celery.task(bind=True)
 def run_scan_task(self, scan_id):
-    """
-    Tác vụ Celery chính để chạy quá trình quét.
-    """
     scan = Scan.query.get(scan_id)
     if not scan:
         print(f"[ERROR] Không tìm thấy Scan với ID: {scan_id}")
         return
 
     try:
-        # Cập nhật trạng thái ban đầu
         scan.status = 'INITIALIZING'
         db.session.commit()
 
         session = requests.Session()
         scanner = Scanner(session)
 
-        # --- BƯỚC KIỂM TRA QUAN TRỌNG NHẤT ---
-        print("[INFO] Bắt đầu đăng nhập và thiết lập security level...")
-        login_result = scanner.login()
+        # --- LOGIC MỚI: KIỂM TRA MỤC TIÊU ---
+        is_dvwa_target = 'dvwa' in scan.target_url.lower()
 
-        # Kiểm tra chặt chẽ cả 'success' và 'security_set'
-        if not login_result.get('success') or not login_result.get('security_set'):
-            error_message = login_result.get('message', 'Lỗi không xác định khi đăng nhập hoặc thiết lập security.')
-            print(f"[CRITICAL] {error_message}")
-            scan.status = f'FAILED: {error_message}'
-            db.session.commit()
-            return # Dừng tác vụ ngay lập tức
+        if is_dvwa_target:
+            print("[INFO] Mục tiêu được xác định là DVWA. Bắt đầu quá trình đăng nhập...")
+            login_result = scanner.login()
+            if not login_result.get('success') or not login_result.get('security_set'):
+                error_message = login_result.get('message', 'Lỗi không xác định khi đăng nhập DVWA.')
+                print(f"[CRITICAL] {error_message}")
+                scan.status = f'FAILED: {error_message}'
+                db.session.commit()
+                return
+            print("[SUCCESS] Đăng nhập và thiết lập security cho DVWA thành công.")
+        else:
+            print(f"[INFO] Mục tiêu là trang web đơn giản ({scan.target_url}). Bỏ qua bước đăng nhập.")
 
-        print(f"[SUCCESS] {login_result.get('message')}")
-
-        # --- Bắt đầu Crawl ---
         scan.status = 'CRAWLING'
         db.session.commit()
         print(f"[INFO] Bắt đầu crawl trang: {scan.target_url}")
         crawler = Crawler(session, scan.target_url)
-        targets_to_scan = crawler.crawl(max_depth=2)
+        # Giảm độ sâu crawl cho các trang đơn giản để quét nhanh hơn
+        max_crawl_depth = 2 if is_dvwa_target else 1
+        targets_to_scan = crawler.crawl(max_depth=max_crawl_depth)
         print(f"[INFO] Crawl hoàn tất. Tìm thấy {len(targets_to_scan)} mục tiêu.")
 
-        # --- Bắt đầu Scan ---
+        # Tái xác thực chỉ cần thiết cho DVWA
+        if is_dvwa_target:
+            print("[INFO] Tái xác thực phiên làm việc DVWA trước khi quét...")
+            relogin_result = scanner.login()
+            if not relogin_result.get('success') or not relogin_result.get('security_set'):
+                print("[CRITICAL] Tái xác thực thất bại. Dừng quá trình quét.")
+                scan.status = 'FAILED: Mất phiên làm việc'
+                db.session.commit()
+                return
+
         scan.status = 'SCANNING'
         db.session.commit()
         print(f"[INFO] Bắt đầu quét các lỗ hổng...")
         vulnerabilities = scanner.run_scan(targets_to_scan)
         print(f"[INFO] Quét hoàn tất. Tìm thấy {len(vulnerabilities)} lỗ hổng.")
 
-        # --- Lưu kết quả ---
         if vulnerabilities:
             for vuln in vulnerabilities:
                 new_vuln = Vulnerability(
                     scan_id=scan.id,
-                    url=vuln['url'],
-                    vuln_type=vuln['type'],
-                    payload=vuln['payload'],
+                    url=vuln.get('url', 'N/A'),
+                    vuln_type=vuln.get('type', 'N/A'),
+                    payload=vuln.get('payload', 'N/A'),
                     evidence=vuln.get('evidence'),
                     ai_confidence=vuln.get('ai_confidence'),
                     method=vuln.get('method', 'GET')

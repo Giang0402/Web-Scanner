@@ -31,7 +31,6 @@ class Scanner:
 
     def login(self):
         try:
-            print("[LOGIN] Lấy trang đăng nhập để lấy token...")
             login_page_resp = self.session.get(Config.TARGET_LOGIN_URL, timeout=10)
             if login_page_resp.status_code != 200:
                 return {'success': False, 'message': f"Không thể truy cập trang đăng nhập, status: {login_page_resp.status_code}"}
@@ -40,22 +39,21 @@ class Scanner:
             if not user_token_tag: return {'success': False, 'message': "Không tìm thấy user_token trên trang đăng nhập."}
             user_token = user_token_tag['value']
             
-            print(f"[LOGIN] Gửi thông tin đăng nhập với token: {user_token}")
             login_data = {'username': Config.TARGET_USERNAME, 'password': Config.TARGET_PASSWORD, 'Login': 'Login', 'user_token': user_token}
             response = self.session.post(Config.TARGET_LOGIN_URL, data=login_data, allow_redirects=True, timeout=10)
 
             if "login.php" in response.url or "index.php" not in response.url:
                 return {'success': False, 'message': "Đăng nhập thất bại. Kiểm tra lại thông tin đăng nhập hoặc logic."}
-            print("[LOGIN] Đăng nhập thành công, đang ở trang chủ.")
 
-            print("[LOGIN] Truy cập trang security để thiết lập mức độ...")
+            # **BẢN VÁ QUAN TRỌNG: Thêm Referer để duy trì session**
+            self.session.headers.update({'Referer': response.url})
+
             security_page_resp = self.session.get(Config.TARGET_SECURITY_URL, timeout=10)
             soup = BeautifulSoup(security_page_resp.text, 'html.parser')
             security_token_tag = soup.find('input', {'name': 'user_token'})
             if not security_token_tag: return {'success': False, 'message': "Không tìm thấy user_token trên trang security."}
             security_token = security_token_tag['value']
             
-            print(f"[LOGIN] Gửi yêu cầu thiết lập security='low' với token: {security_token}")
             security_data = {'security': 'low', 'seclev_submit': 'Submit', 'user_token': security_token}
             response_sec = self.session.post(Config.TARGET_SECURITY_URL, data=security_data, timeout=10)
             
@@ -70,32 +68,54 @@ class Scanner:
         found_vulnerabilities = []
         payload_list = self.payloads.get(vuln_type, [])
         
-        for payload in payload_list:
-            try:
-                response = None
-                if method == 'get':
-                    parsed_url = urlparse(url)
-                    params = parse_qs(parsed_url.query)
-                    if not params: continue
+        # Đối với phương thức GET
+        if method == 'get':
+            parsed_url = urlparse(url)
+            params = parse_qs(parsed_url.query)
+            if not params:
+                return [] # Không có tham số để quét, trả về danh sách rỗng
 
-                    for param in params:
-                        if param.lower() in self.field_blacklist: continue
+            # Lặp qua TỪNG tham số
+            for param in params:
+                if param.lower() in self.field_blacklist:
+                    continue
+                
+                # Lặp qua TỪNG payload cho tham số đó
+                for payload in payload_list:
+                    try:
                         modified_params = params.copy()
                         modified_params[param] = (payload,)
                         modified_query = urlencode(modified_params, doseq=True)
                         new_url = urlunparse((parsed_url.scheme, parsed_url.netloc, parsed_url.path, "", modified_query, ""))
                         response = self.session.get(new_url, timeout=5)
+
+                        if response and "login.php" not in response.url:
+                            is_vulnerable, evidence, confidence = self.ai_analyzer.analyze(response, payload, vuln_type)
+                            if is_vulnerable:
+                                print(f"  [VULN FOUND!] Type: {vuln_type.upper()}, Evidence: {evidence}")
+                                found_vulnerabilities.append({'url': url, 'type': vuln_type.upper(), 'payload': payload, 'evidence': evidence, 'ai_confidence': confidence, 'method': method.upper()})
+                                # ĐÃ XÓA LỆNH RETURN Ở ĐÂY để vòng lặp tiếp tục
+                    except requests.exceptions.RequestException:
+                        time.sleep(0.1)
+                        continue
+        
+        # Đối với phương thức POST (cần sửa tương tự)
+        elif method == 'post' and data:
+            for key in data.keys():
+                if key.lower() in self.field_blacklist or 'token' in key.lower():
+                    continue
                 
-                elif method == 'post' and data:
-                    for key in data.keys():
-                        if key.lower() in self.field_blacklist or 'token' in key.lower(): continue
-                        
+                for payload in payload_list:
+                    try:
+                        # Lấy token mới cho mỗi lần request để tránh lỗi CSRF
+                        fresh_token = ''
                         try:
                             fresh_page_resp = self.session.get(url, timeout=5)
                             soup = BeautifulSoup(fresh_page_resp.text, 'html.parser')
                             token_tag = soup.find('input', {'name': 'user_token'})
                             fresh_token = token_tag['value'] if token_tag else ''
-                        except Exception: fresh_token = ''
+                        except Exception:
+                            pass # Bỏ qua nếu không lấy được token
 
                         modified_data = data.copy()
                         modified_data[key] = payload
@@ -104,21 +124,17 @@ class Scanner:
                         
                         response = self.session.post(url, data=modified_data, timeout=5)
 
-                if response:
-                    if "login.php" in response.url:
-                        print(f"  [WARN] Session đã bị mất khi thử payload '{payload}'. Bỏ qua.")
+                        if response and "login.php" not in response.url:
+                            is_vulnerable, evidence, confidence = self.ai_analyzer.analyze(response, payload, vuln_type)
+                            if is_vulnerable:
+                                print(f"  [VULN FOUND!] Type: {vuln_type.upper()}, Evidence: {evidence}")
+                                found_vulnerabilities.append({'url': url, 'type': vuln_type.upper(), 'payload': payload, 'evidence': evidence, 'ai_confidence': confidence, 'method': method.upper()})
+                                # ĐÃ XÓA LỆNH RETURN Ở ĐÂY
+                    except requests.exceptions.RequestException:
+                        time.sleep(0.1)
                         continue
-                    
-                    # Gọi AI analyzer mà không cần phản hồi gốc
-                    is_vulnerable, evidence, confidence = self.ai_analyzer.analyze(response, payload, vuln_type)
-                    if is_vulnerable:
-                        print(f"  [VULN FOUND!] Type: {vuln_type.upper()}, Evidence: {evidence}")
-                        found_vulnerabilities.append({'url': url, 'type': vuln_type.upper(), 'payload': payload, 'evidence': evidence, 'ai_confidence': confidence, 'method': method.upper()})
-                        return found_vulnerabilities
 
-            except requests.exceptions.RequestException:
-                time.sleep(0.1)
-                continue
+        # Hàm chỉ trả về kết quả ở đây, sau khi tất cả các vòng lặp đã hoàn thành
         return found_vulnerabilities
 
     def run_scan(self, targets):
