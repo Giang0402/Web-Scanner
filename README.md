@@ -1,84 +1,106 @@
-Web Vulnerability Scanner - Phiên bản Nâng cấp Chuyên nghiệp
-Đây là một ứng dụng quét lỗ hổng web được xây dựng bằng Flask và Celery, được thiết kế để tự động hóa việc phát hiện các lỗ hổng bảo mật phổ biến. Phiên bản này đã được nâng cấp với các tính năng chuyên nghiệp, bao gồm phân tích dựa trên AI, trực quan hóa dữ liệu và một bộ quét mạnh mẽ hơn.
+# Web Vulnerability Scanner
 
-Tính năng nổi bật
-Giao diện Web Hiện đại: Giao diện người dùng trực quan được xây dựng bằng Tailwind CSS để quản lý và xem kết quả quét.
+A professional, Flask-based web vulnerability scanner designed to automate the detection of common security flaws. This upgraded version features a robust scanning engine, asynchronous task handling with Celery, and headless browser technology for high-accuracy XSS detection.
 
-Xử lý Tác vụ Nền: Sử dụng Celery và Redis để thực hiện các tác vụ quét nặng mà không làm ảnh hưởng đến trải nghiệm người dùng.
+## Key Features
 
-Bộ quét Nâng cao:
+- **Modern Web Interface**: An intuitive UI built with Tailwind CSS to manage scans and visualize results.
+- **Asynchronous Scanning**: Utilizes Celery and Redis to perform heavy scanning tasks in the background without blocking the user interface.
+- **Advanced Scanning Engine**:
+- **Vulnerability Support**: Detects SQL Injection (Error-based, Time-based), Command Injection (Output-based, Time-based), and Cross-Site Scripting (XSS).
+- **High-Accuracy XSS Detection**: Uses a headless browser (Playwright) to render pages and confirm JavaScript execution, virtually eliminating false positives.
+- **Comprehensive Target Discovery**: Crawls both GET parameters and POST forms to discover a wide range of potential targets.
+- **Data Visualization**: Scan results are displayed using charts (Chart.js) for a clear and immediate overview of the security posture.
+- **Secure and Professional**: Manages sensitive credentials and configuration via environment variables (`.env` file).
 
-Hỗ trợ quét các lỗ hổng: SQL Injection (SQLi), Cross-Site Scripting (XSS), Command Injection, và Directory Traversal.
+## Tech Stack
 
-Quét cả tham số GET và các form POST.
+- **Backend**: Python, Flask, Celery
+- **Frontend**: HTML, Tailwind CSS, JavaScript, Chart.js
+- **Database**: PostgreSQL (easily adaptable to SQLite or MySQL)
+- **Message Broker**: Redis
+- **Core Python Libraries**: `requests`, `beautifulsoup4`, `sqlalchemy`, `playwright`
 
-Sử dụng danh sách payload từ tệp tin, dễ dàng mở rộng.
+## Getting Started
 
-Phân tích bằng AI: Tích hợp một module AI đơn giản để phân tích các phản hồi bất thường từ server, tăng khả năng phát hiện và cung cấp "Điểm tin cậy AI".
+Follow these instructions to get a copy of the project up and running on your local machine for development and testing purposes.
 
-Trực quan hóa Dữ liệu: Kết quả quét được hiển thị dưới dạng biểu đồ (sử dụng Chart.js) giúp dễ dàng nắm bắt tình hình.
+### Prerequisites
 
-Bảo mật và Chuyên nghiệp: Quản lý thông tin nhạy cảm bằng biến môi trường (file .env).
+- Python 3.8+
+- A running Redis Server instance.
+- A running PostgreSQL Server instance.
+- A test environment to scan (e.g., [DVWA](https://dvwa.co.uk/) or [OWASP Juice Shop](https://owasp.org/www-project-juice-shop/) running in Docker).
 
-Công nghệ sử dụng
-Backend: Python, Flask, Celery
+### Installation and Setup
 
-Frontend: HTML, Tailwind CSS, JavaScript, Chart.js
+1.  **Clone the repository:**
 
-Cơ sở dữ liệu: SQLite (có thể dễ dàng đổi sang PostgreSQL hoặc MySQL)
+    ```bash
+    git clone <your-repo-url>
+    cd <your-repo-folder>
+    ```
 
-Message Broker: Redis
+2.  **Create and activate a virtual environment (recommended):**
 
-Thư viện Python chính: requests, beautifulsoup4, sqlalchemy, redis, celery
+    ```bash
+    # For Windows
+    python -m venv venv
+    venv\Scripts\activate
 
-Hướng dẫn Cài đặt và Chạy dự án
-Yêu cầu tiên quyết
-Python 3.8+
+    # For macOS/Linux
+    python3 -m venv venv
+    source venv/bin/activate
+    ```
 
-Redis Server đã được cài đặt và đang chạy trên máy của bạn.
+3.  **Install the required packages:**
 
-Một môi trường web để thử nghiệm (ví dụ: DVWA chạy trên Docker).
+    ```bash
+    pip install -r requirements.txt
+    ```
 
-Các bước cài đặt
+4.  **Install browser binaries for Playwright:**
 
-1. Clone repository:
+    ```bash
+    playwright install
+    ```
 
-git clone <your-repo-url>
-cd <your-repo-folder>
+5.  **Configure environment variables:**
 
-2. Tạo và kích hoạt môi trường ảo (khuyến khích):
+    - Copy the example `.env.example` file to a new file named `.env`:
+      ```bash
+      cp .env.example .env
+      ```
+    - Open the `.env` file and edit the values to match your environment, especially the `DATABASE_URL` and any target credentials.
 
-python -m venv venv
-source venv/bin/activate # Trên Windows: venv\Scripts\activate
+6.  **Initialize the database:**
+    - Run the following command to create the necessary tables in your PostgreSQL database:
+      ```bash
+      python create_db.py
+      ```
 
-3. Cài đặt các thư viện cần thiết:
+### Running the Application
 
-pip install -r requirements.txt
+The application requires three separate processes running in three different terminals.
 
-4. Cấu hình biến môi trường:
+1.  **Start the Redis Server:**
 
-Sao chép tệp .env.example thành .env:
+    - Make sure your Redis instance is running.
 
-cp .env.example .env
+2.  **Start the Celery Worker:**
 
-Mở tệp .env và chỉnh sửa các giá trị cho phù hợp với môi trường của bạn (đặc biệt là thông tin đăng nhập DVWA).
+    - Open a new terminal, activate the virtual environment, and run:
+      ```bash
+      celery -A task.celery worker --loglevel=info --pool=eventlet
+      ```
+    - **Note:** `--pool=eventlet` is crucial for Celery to handle network-based tasks efficiently.
 
-5. Khởi tạo cơ sở dữ liệu:
-   Chạy lệnh sau để tạo các bảng trong file scanner.db:
+3.  **Start the Flask Application:**
 
-python create_db.py
+    - Open another terminal, activate the virtual environment, and run:
+      ```bash
+      flask run
+      ```
 
-6. Khởi động Celery Worker:
-   Mở một cửa sổ terminal mới, kích hoạt môi trường ảo và chạy lệnh sau:
-
-celery -A task.celery worker --loglevel=info --pool=eventlet
-
-Lưu ý: --pool=eventlet rất quan trọng để Celery hoạt động tốt với các tác vụ mạng.
-
-7. Khởi động ứng dụng Flask:
-   Mở một cửa sổ terminal khác, kích hoạt môi trường ảo và chạy:
-
-flask run
-
-8. Truy cập ứng dụng:
-   Mở trình duyệt và truy cập vào http://127.0.0.1:5000. Bây giờ bạn có thể bắt đầu quá trình quét!
+4.  **Access the Application:**
+    - Open your web browser and navigate to `http://127.0.0.1:5000`. You can now start scanning!
