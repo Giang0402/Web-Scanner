@@ -9,3 +9,5 @@ __pycache__/
 # Các file hệ điều hành
 .DS_Store
 Thumbs.db
+
+.env

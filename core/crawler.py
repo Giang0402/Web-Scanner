@@ -1,4 +1,3 @@
-# giang0402/web-scanner/Web-Scanner-e94e379f950bc97333bfe721b328412df3aa10ea/core/crawler.py
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
@@ -6,7 +5,7 @@ import time
 
 class Crawler:
     """
-    Crawler được nâng cấp sử dụng Playwright để xử lý các trang web dựa trên JavaScript (SPA).
+    Upgraded crawler that uses Playwright to handle JavaScript-based websites (SPAs).
     """
     def __init__(self, base_url):
         self.base_url = base_url
@@ -16,7 +15,7 @@ class Crawler:
         self.url_blacklist = ['logout', 'signout', 'exit', 'logoff', 'dangxuat']
 
     def _parse_cookie_string(self, cookie_string):
-        """Hàm trợ giúp để chuyển đổi chuỗi cookie thành định dạng mà Playwright yêu cầu."""
+        """Helper function to convert a cookie string into the format required by Playwright."""
         cookies = []
         if not cookie_string:
             return cookies
@@ -34,14 +33,14 @@ class Crawler:
         return cookies
 
     def _get_links_and_forms(self, page):
-        """Hàm này xử lý action của form một cách chính xác."""
+        """This function correctly handles form actions."""
         links = set()
         forms = []
-        time.sleep(1)
+        time.sleep(1) # Wait for potential JS rendering
         content = page.content()
         soup = BeautifulSoup(content, 'html.parser')
 
-        # Lấy links
+        # Get links
         for a_tag in soup.find_all('a', href=True):
             href = a_tag.attrs['href']
             if not href or href.startswith(('mailto:', 'tel:')):
@@ -50,15 +49,15 @@ class Crawler:
             if urlparse(full_url).netloc == self.domain_name and '#' not in full_url:
                 links.add(full_url)
 
-        # Lấy forms
+        # Get forms
         for form in soup.find_all('form'):
             action = form.attrs.get('action', '').strip()
             
-            # === LOGIC QUAN TRỌNG NHẤT: Xử lý action của form ===
-            # Nếu action rỗng hoặc là '#', form sẽ submit đến chính trang hiện tại.
+            # === CRITICAL LOGIC: Handling form actions ===
+            # If action is empty or '#', the form submits to the current page.
             if not action or action == '#':
                 form_url = page.url
-            # Ngược lại, kết hợp action với URL của trang hiện tại.
+            # Otherwise, join the action with the current page's URL.
             else:
                 form_url = urljoin(page.url, action)
 
@@ -83,7 +82,7 @@ class Crawler:
             if auth_cookie:
                 parsed_cookies = self._parse_cookie_string(auth_cookie)
                 context.add_cookies(parsed_cookies)
-                print("[CRAWLER INFO] Đã áp dụng Session Cookie cho trình duyệt của Crawler.")
+                print("[CRAWLER INFO] Applied Session Cookie to the Crawler's browser.")
 
             page = context.new_page()
             to_crawl = {self.base_url}
@@ -94,10 +93,10 @@ class Crawler:
                 if not to_crawl:
                     break
                 
-                print(f"[CRAWLER] Bắt đầu crawl ở độ sâu {depth+1} với {len(to_crawl)} links...")
+                print(f"[CRAWLER] Starting crawl at depth {depth+1} with {len(to_crawl)} links...")
                 for url in list(to_crawl):
                     if any(blacklisted_word in url.lower() for blacklisted_word in self.url_blacklist):
-                        print(f"[CRAWLER INFO] Bỏ qua URL trong danh sách đen: {url}")
+                        print(f"[CRAWLER INFO] Skipping blacklisted URL: {url}")
                         continue
                     if url in self.crawled_links:
                         continue
@@ -109,8 +108,8 @@ class Crawler:
                         page.goto(url, wait_until='load', timeout=20000)
                         
                         if "login.php" in page.url and urlparse(url).path not in ('/login.php', '/dvwa/login.php'):
-                             print(f"[CRAWLER WARNING] Bị chuyển hướng về trang đăng nhập khi truy cập: {url}.")
-                             continue
+                                print(f"[CRAWLER WARNING] Redirected to login page when accessing: {url}.")
+                                continue
 
                         links, forms = self._get_links_and_forms(page)
                         new_links.update(links)
@@ -122,9 +121,9 @@ class Crawler:
                                 self.crawled_forms.add(form_key)
 
                     except PlaywrightTimeoutError:
-                        print(f"[CRAWLER WARNING] Timeout khi truy cập: {url}")
+                        print(f"[CRAWLER WARNING] Timeout when accessing: {url}")
                     except Exception as e:
-                        print(f"[CRAWLER ERROR] Lỗi khi xử lý {url}: {e}")
+                        print(f"[CRAWLER ERROR] Error processing {url}: {e}")
 
                 to_crawl = new_links - self.crawled_links
             

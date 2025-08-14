@@ -1,5 +1,4 @@
 import eventlet
-# QUAN TRỌNG: monkey_patch() phải được gọi đầu tiên, trước khi import app
 eventlet.monkey_patch()
 
 from app import app

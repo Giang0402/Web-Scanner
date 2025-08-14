@@ -1,24 +1,25 @@
 class BaseScanner:
-    """Lớp cơ sở trừu tượng cho tất cả các plugin quét."""
+    """Abstract base class for all scanner plugins."""
+
     def __init__(self, session, payloads):
         """
-        Khởi tạo plugin.
-        :param session: Đối tượng session của thư viện requests để thực hiện HTTP request.
-        :param payloads: Một từ điển chứa tất cả các payload đã được tải.
+        Initializes the scanner plugin.
+        :param session: The requests session object for making HTTP requests.
+        :param payloads: A dictionary containing all loaded payloads.
         """
         self.session = session
-        # Lấy danh sách payload tương ứng với tên của plugin
+        # Get the list of payloads corresponding to the scanner's name
         self.payloads = payloads.get(self.name, [])
 
     @property
     def name(self):
-        """Tên của plugin, phải khớp với tên tệp payload (ví dụ: 'xss')."""
-        raise NotImplementedError("Mỗi plugin phải định nghĩa một 'name'.")
+        """The name of the scanner, which must match the payload filename (e.g., 'xss')."""
+        raise NotImplementedError("Each scanner plugin must define a 'name'.")
 
     def scan(self, target):
         """
-        Phương thức chính để thực hiện quét trên một mục tiêu.
-        :param target: Một từ điển chứa thông tin mục tiêu {'type': 'url'/'form', 'value': ...}.
-        :return: Một danh sách các lỗ hổng được tìm thấy (dạng từ điển).
+        The main method to perform a scan on a target.
+        :param target: A dictionary containing target information {'type': 'url'/'form', 'value': ...}.
+        :return: A list of found vulnerabilities (as dictionaries).
         """
-        raise NotImplementedError("Mỗi plugin phải triển khai phương thức 'scan'.")
+        raise NotImplementedError("Each scanner plugin must implement the 'scan' method.")

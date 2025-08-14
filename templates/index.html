@@ -1,9 +1,7 @@
 {% extends 'layout.html' %} {% block title %}Dashboard - Web Scanner{%endblock%}
 {% block content %}
 <div class="bg-white p-6 rounded-lg shadow-lg mb-8">
-  <h1 class="text-2xl font-bold text-gray-800 mb-4">
-    Bắt đầu một phiên quét mới
-  </h1>
+  <h1 class="text-2xl font-bold text-gray-800 mb-4">Start a New Scan</h1>
   <form id="scan-form">
     <div class="flex items-center border-b-2 border-blue-500 py-2">
       <input
@@ -19,14 +17,14 @@
         class="flex-shrink-0 bg-blue-500 hover:bg-blue-700 border-blue-500 hover:border-blue-700 text-sm border-4 text-white py-1 px-2 rounded"
         type="submit"
       >
-        Bắt đầu quét
+        Start Scan
       </button>
     </div>
 
     <div class="grid md:grid-cols-2 gap-6 mt-6">
       <div>
         <h2 class="text-lg font-semibold text-gray-700">
-          Tùy chọn Xác thực (Tùy chọn)
+          Authentication Options (Optional)
         </h2>
         <div class="mt-2">
           <label
@@ -39,7 +37,7 @@
             name="auth_cookie"
             id="auth_cookie"
             class="w-full mt-1 p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500"
-            placeholder="ví dụ: PHPSESSID=abcdef12345"
+            placeholder="e.g., PHPSESSID=abcdef12345"
           />
         </div>
         <div class="mt-2">
@@ -53,13 +51,13 @@
             name="auth_header"
             id="auth_header"
             class="w-full mt-1 p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500"
-            placeholder="ví dụ: Bearer eyJhbGciOiJIU..."
+            placeholder="e.g., Bearer eyJhbGciOiJIU..."
           />
         </div>
       </div>
 
       <div>
-        <h2 class="text-lg font-semibold text-gray-700">Chính sách Quét</h2>
+        <h2 class="text-lg font-semibold text-gray-700">Scan Policy</h2>
         <div class="grid grid-cols-2 gap-2 mt-2">
           {% for plugin_name in available_plugins %}
           <div>
@@ -76,7 +74,7 @@
             >
           </div>
           {% else %}
-          <p class="text-gray-500">Không tìm thấy plugin nào.</p>
+          <p class="text-gray-500">No plugins found.</p>
           {% endfor %}
         </div>
       </div>
@@ -86,7 +84,7 @@
 </div>
 
 <div class="bg-white p-6 rounded-lg shadow-lg">
-  <h2 class="text-2xl font-bold text-gray-800 mb-4">Lịch sử các phiên quét</h2>
+  <h2 class="text-2xl font-bold text-gray-800 mb-4">Scan History</h2>
   <div class="overflow-x-auto">
     <table class="min-w-full bg-white">
       <thead class="bg-gray-800 text-white">
@@ -95,16 +93,16 @@
             ID
           </th>
           <th class="text-left py-3 px-4 uppercase font-semibold text-sm">
-            URL Mục tiêu
+            Target URL
           </th>
           <th class="text-left py-3 px-4 uppercase font-semibold text-sm">
-            Trạng thái
+            Status
           </th>
           <th class="text-left py-3 px-4 uppercase font-semibold text-sm">
-            Thời gian tạo
+            Created At
           </th>
           <th class="text-left py-3 px-4 uppercase font-semibold text-sm">
-            Hành động
+            Actions
           </th>
         </tr>
       </thead>
@@ -141,7 +139,7 @@
               action="{{ url_for('delete_scan', scan_id=scan.id) }}"
               method="POST"
               class="inline-block"
-              onsubmit="return confirm('Bạn có chắc muốn xóa phiên quét này?');"
+              onsubmit="return confirm('Are you sure you want to delete this scan?');"
             >
               <button type="submit" class="text-red-600 hover:text-red-900">
                 <i class="fas fa-trash-alt"></i>
@@ -207,14 +205,14 @@
         .then((response) => response.json())
         .then((data) => {
           if (data.scan_id) {
-            messageDiv.innerHTML = `<div class="text-green-600">Phiên quét đã bắt đầu thành công! ID: ${data.scan_id}. Đang tải lại...</div>`;
+            messageDiv.innerHTML = `<div class="text-green-600">Scan started successfully! ID: ${data.scan_id}. Reloading...</div>`;
             setTimeout(() => location.reload(), 2000);
           } else {
-            messageDiv.innerHTML = `<div class="text-red-600">Lỗi: ${data.error}</div>`;
+            messageDiv.innerHTML = `<div class="text-red-600">Error: ${data.error}</div>`;
           }
         })
         .catch((err) => {
-          messageDiv.innerHTML = `<div class="text-red-600">Đã xảy ra lỗi không mong muốn.</div>`;
+          messageDiv.innerHTML = `<div class="text-red-600">An unexpected error occurred.</div>`;
           console.error(err);
         });
     });

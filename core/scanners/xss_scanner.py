@@ -1,5 +1,3 @@
-# core/scanners/xss_scanner.py
-
 from .base_scanner import BaseScanner
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError

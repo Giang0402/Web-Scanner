@@ -7,7 +7,7 @@ from core.scanners.base_scanner import BaseScanner
 
 class Scanner:
     """
-    Lớp điều phối chính. Tải tất cả các plugin quét và điều phối việc quét.
+    Main orchestrator class. Loads all scanner plugins and coordinates the scan.
     """
     def __init__(self, session, scan_config=None):
         self.session = session
@@ -15,24 +15,24 @@ class Scanner:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36'
         })
         
-        # Áp dụng cấu hình xác thực nếu có
+        # Apply authentication configuration if provided
         if scan_config and 'auth' in scan_config:
             auth_config = scan_config['auth']
             if auth_config.get('cookie'):
                 self.session.headers.update({'Cookie': auth_config['cookie']})
-                print("[INFO] Đã áp dụng Session Cookie vào header.")
+                print("[INFO] Applied Session Cookie to headers.")
             if auth_config.get('header'):
                 self.session.headers.update({'Authorization': auth_config['header']})
-                print("[INFO] Đã áp dụng Authorization Header.")
+                print("[INFO] Applied Authorization Header.")
 
         self.payloads = self._load_payloads()
         
-        # Chỉ tải các plugin được yêu cầu trong chính sách
+        # Load only the plugins requested in the policy
         enabled_plugins = scan_config.get('policy', {}).get('plugins') if scan_config else None
         self.scanners = self._load_scanners(enabled_plugins)
         
-        if not hasattr(self, 'already_printed_info'): # Tránh in nhiều lần
-            print(f"[INFO] Đã tải thành công {len(self.scanners)} plugin quét: {[s.name for s in self.scanners]}")
+        if not hasattr(self, 'already_printed_info'): # Avoid printing multiple times
+            print(f"[INFO] Successfully loaded {len(self.scanners)} scanner plugins: {[s.name for s in self.scanners]}")
             self.already_printed_info = True
 
 
@@ -40,7 +40,7 @@ class Scanner:
         payloads = {}
         payload_dir = os.path.join(os.path.dirname(__file__), '..', 'payloads')
         if not os.path.isdir(payload_dir):
-            print(f"[ERROR] Thư mục payloads không tồn tại tại: {payload_dir}")
+            print(f"[ERROR] Payloads directory does not exist at: {payload_dir}")
             return {}
         for filename in os.listdir(payload_dir):
             if filename.endswith('.txt'):
@@ -50,15 +50,15 @@ class Scanner:
         return payloads
 
     def _load_scanners(self, enabled_plugins=None):
-        """Tải các plugin, có thể lọc theo danh sách cho phép."""
+        """Loads scanner plugins, optionally filtering by an allowed list."""
         scanners = []
         scanner_dir = os.path.join(os.path.dirname(__file__), 'scanners')
         for filename in os.listdir(scanner_dir):
             if filename.endswith('.py') and not filename.startswith('__') and not filename.startswith('base'):
-                # Tên plugin được suy ra từ tên file, ví dụ: 'xss_scanner.py' -> 'xss'
+                # Plugin name is inferred from the filename, e.g., 'xss_scanner.py' -> 'xss'
                 plugin_name = filename.replace('_scanner.py', '')
                 
-                # Nếu có danh sách cho phép và plugin không nằm trong đó, bỏ qua
+                # If an allowed list is provided and the plugin is not in it, skip
                 if enabled_plugins is not None and plugin_name not in enabled_plugins:
                     continue
                 
@@ -70,67 +70,67 @@ class Scanner:
                         if isinstance(item, type) and issubclass(item, BaseScanner) and item is not BaseScanner:
                             scanners.append(item(self.session, self.payloads))
                 except Exception as e:
-                    print(f"[ERROR] Không thể tải plugin từ {filename}: {e}")
+                    print(f"[ERROR] Failed to load plugin from {filename}: {e}")
         return scanners
 
     def run_scan(self, targets):
         """
-        Lặp qua tất cả các mục tiêu và áp dụng tất cả các plugin quét.
+        Iterates through all targets and applies all scanner plugins.
         """
         all_vulnerabilities = []
         url_blacklist = ['/login.php', '/logout.php', '/setup.php']
 
-        print(f"[*] Bắt đầu quét {len(targets)} mục tiêu với {len(self.scanners)} plugin...")
+        print(f"[*] Starting scan on {len(targets)} targets with {len(self.scanners)} plugins...")
         for i, target in enumerate(targets):
             target_url_display = target['value'] if target['type'] == 'url' else target['value']['url']
             
             if any(blacklisted_path in target_url_display for blacklisted_path in url_blacklist):
                 continue
 
-            print(f"  -> Đang quét mục tiêu {i+1}/{len(targets)}: {target_url_display[:80]}...")
+            print(f"  -> Scanning target {i+1}/{len(targets)}: {target_url_display[:80]}...")
             
-            # Áp dụng từng plugin cho mục tiêu
+            # Apply each plugin to the target
             for scanner_plugin in self.scanners:
                 try:
                     results = scanner_plugin.scan(target)
                     if results:
                         all_vulnerabilities.extend(results)
                 except Exception as e:
-                    print(f"  [!] Lỗi khi chạy plugin '{scanner_plugin.name}' trên mục tiêu {target_url_display}: {e}")
+                    print(f"  [!] Error running plugin '{scanner_plugin.name}' on target {target_url_display}: {e}")
                     
         return all_vulnerabilities
 
     def login(self):
-        """Logic đăng nhập DVWA. Sẽ ít được dùng hơn khi có tùy chọn xác thực."""
+        """DVWA login logic. Will be used less with the new authentication options."""
         try:
             login_page_resp = self.session.get(Config.TARGET_LOGIN_URL, timeout=10)
             if login_page_resp.status_code != 200:
-                return {'success': False, 'message': f"Không thể truy cập trang đăng nhập, status: {login_page_resp.status_code}"}
+                return {'success': False, 'message': f"Could not access login page, status: {login_page_resp.status_code}"}
             soup = BeautifulSoup(login_page_resp.text, 'html.parser')
             user_token_tag = soup.find('input', {'name': 'user_token'})
-            if not user_token_tag: return {'success': False, 'message': "Không tìm thấy user_token trên trang đăng nhập."}
+            if not user_token_tag: return {'success': False, 'message': "user_token not found on login page."}
             user_token = user_token_tag['value']
             
             login_data = {'username': Config.TARGET_USERNAME, 'password': Config.TARGET_PASSWORD, 'Login': 'Login', 'user_token': user_token}
             response = self.session.post(Config.TARGET_LOGIN_URL, data=login_data, allow_redirects=True, timeout=10)
 
             if "login.php" in response.url or "index.php" not in response.url:
-                return {'success': False, 'message': "Đăng nhập thất bại. Kiểm tra lại thông tin đăng nhập hoặc logic."}
+                return {'success': False, 'message': "Login failed. Check credentials or logic."}
 
             self.session.headers.update({'Referer': response.url})
 
             security_page_resp = self.session.get(Config.TARGET_SECURITY_URL, timeout=10)
             soup = BeautifulSoup(security_page_resp.text, 'html.parser')
             security_token_tag = soup.find('input', {'name': 'user_token'})
-            if not security_token_tag: return {'success': False, 'message': "Không tìm thấy user_token trên trang security."}
+            if not security_token_tag: return {'success': False, 'message': "user_token not found on security page."}
             security_token = security_token_tag['value']
             
             security_data = {'security': 'low', 'seclev_submit': 'Submit', 'user_token': security_token}
             response_sec = self.session.post(Config.TARGET_SECURITY_URL, data=security_data, timeout=10)
             
             if "security level set to low" not in response_sec.text.lower():
-                return {'success': True, 'security_set': False, 'message': "Đăng nhập thành công nhưng KHÔNG THỂ đặt security level thành 'low'."}
+                return {'success': True, 'security_set': False, 'message': "Login successful but FAILED to set security level to 'low'."}
             
-            return {'success': True, 'security_set': True, 'message': "Đăng nhập và thiết lập security thành công."}
-        except requests.exceptions.RequestException as e: return {'success': False, 'message': f"Lỗi mạng khi đăng nhập: {e}"}
-        except Exception as e: return {'success': False, 'message': f"Lỗi nghiêm trọng khi đăng nhập: {e}"}
+            return {'success': True, 'security_set': True, 'message': "Login and security setup successful."}
+        except requests.exceptions.RequestException as e: return {'success': False, 'message': f"Network error during login: {e}"}
+        except Exception as e: return {'success': False, 'message': f"Critical error during login: {e}"}

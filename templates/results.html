@@ -1,18 +1,18 @@
-{% extends 'layout.html' %} {% block title %}Kết quả Quét #{{ scan.id }}{%
+{% extends 'layout.html' %} {% block title %}Scan Results #{{ scan.id }}{%
 endblock %} {% block content %}
 <div class="bg-white p-6 rounded-lg shadow-lg mb-8">
-  <h1 class="text-3xl font-bold text-gray-800">Báo cáo Quét #{{ scan.id }}</h1>
+  <h1 class="text-3xl font-bold text-gray-800">Scan Report #{{ scan.id }}</h1>
   <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 text-gray-600">
     <div>
-      <strong>URL Mục tiêu:</strong>
+      <strong>Target URL:</strong>
       <span class="font-mono text-sm break-all">{{ scan.target_url }}</span>
     </div>
     <div>
-      <strong>Thời gian:</strong> {{
+      <strong>Timestamp:</strong> {{
       scan.created_at.strftime('%Y-%m-%d%H:%M:%S') }}
     </div>
     <div id="scan-status-details">
-      <strong>Trạng thái:</strong>
+      <strong>Status:</strong>
       <span
         class="px-2 py-1 font-semibold leading-tight rounded-full"
         data-status="{{ scan.status }}"
@@ -24,17 +24,19 @@ endblock %} {% block content %}
 
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
   <div class="bg-white p-6 rounded-lg shadow-lg">
-    <h2 class="text-xl font-bold text-gray-800 mb-4">Phân loại Lỗ hổng</h2>
+    <h2 class="text-xl font-bold text-gray-800 mb-4">
+      Vulnerability Classification
+    </h2>
     <canvas
       id="vulnTypeChart"
       data-url="{{ url_for('vulnerability_types_data', scan_id=scan.id) }}"
     ></canvas>
   </div>
   <div class="bg-white p-6 rounded-lg shadow-lg">
-    <h2 class="text-xl font-bold text-gray-800 mb-4">Thống kê</h2>
+    <h2 class="text-xl font-bold text-gray-800 mb-4">Statistics</h2>
     <div class="space-y-4">
       <div class="flex justify-between items-center p-4 bg-gray-50 rounded-lg">
-        <span class="font-semibold text-gray-700">Tổng số lỗ hổng</span>
+        <span class="font-semibold text-gray-700">Total Vulnerabilities</span>
         <span class="text-2xl font-bold text-red-500"
           >{{ vulnerabilities|length }}</span
         >
@@ -45,7 +47,7 @@ endblock %} {% block content %}
 
 <div class="bg-white p-6 rounded-lg shadow-lg">
   <h2 class="text-2xl font-bold text-gray-800 mb-4">
-    Danh sách Lỗ hổng Chi tiết
+    Detailed Vulnerability List
   </h2>
   <div class="space-y-6">
     {% for vuln in vulnerabilities %}
@@ -63,33 +65,33 @@ endblock %} {% block content %}
           <span class="text-gray-600">({{ vuln.method }})</span>
         </div>
         <div class="text-right">
-          <span class="font-semibold">Độ tin cậy AI:</span>
+          <span class="font-semibold">AI Confidence:</span>
           <span class="text-blue-600 font-bold"
             >{{ "%.0f"|format((vuln.ai_confidence or 0) * 100) }}%</span
           >
         </div>
       </div>
-      <div id="vuln-body-{{ vuln.id }}" class="p-4 space-y-4">
+      <div id="vuln-body-{{ vuln.id }}" class="p-4 space-y-4 hidden">
         <div>
-          <strong class="text-gray-700">URL Bị ảnh hưởng:</strong>
+          <strong class="text-gray-700">Affected URL:</strong>
           <p class="font-mono text-sm break-all bg-gray-50 p-2 rounded mt-1">
             {{ vuln.url }}
           </p>
         </div>
         <div>
-          <strong class="text-gray-700">Payload được sử dụng:</strong>
+          <strong class="text-gray-700">Payload Used:</strong>
           <p class="font-mono text-sm break-all bg-gray-50 p-2 rounded mt-1">
             {{ vuln.payload }}
           </p>
         </div>
         <div>
-          <strong class="text-gray-700">Bằng chứng (Evidence):</strong>
+          <strong class="text-gray-700">Evidence:</strong>
           <p class="italic text-gray-800 bg-gray-50 p-2 rounded mt-1">
             {{ vuln.evidence }}
           </p>
         </div>
         <div>
-          <strong class="text-gray-700">Gợi ý Khắc phục:</strong>
+          <strong class="text-gray-700">Remediation Advice:</strong>
           <p
             class="text-sm text-gray-800 bg-green-50 p-3 rounded border-l-4 border-green-500 mt-1"
           >
@@ -101,7 +103,7 @@ endblock %} {% block content %}
     {% else %}
     <div class="text-center py-8">
       <p class="text-gray-500 text-lg">
-        Tuyệt vời! Không tìm thấy lỗ hổng nào trong phiên quét này.
+        Great! No vulnerabilities were found in this scan.
       </p>
     </div>
     {% endfor %}
@@ -117,7 +119,7 @@ endblock %} {% block content %}
   }
 
   document.addEventListener("DOMContentLoaded", () => {
-    // Cập nhật màu trạng thái (giữ nguyên logic)
+    // Update status colors
     document.querySelectorAll("[data-status]").forEach((span) => {
       const status = span.dataset.status.toUpperCase();
       span.className = "px-2 py-1 font-semibold leading-tight rounded-full"; // Reset
@@ -131,7 +133,7 @@ endblock %} {% block content %}
         span.classList.add("text-red-700", "bg-red-100");
     });
 
-    // Vẽ biểu đồ (giữ nguyên logic)
+    // Render the chart
     const chartCanvas = document.getElementById("vulnTypeChart");
     if (chartCanvas) {
       const dataUrl = chartCanvas.dataset.url;
@@ -147,7 +149,7 @@ endblock %} {% block content %}
                 labels: data.labels,
                 datasets: [
                   {
-                    label: "Số lượng",
+                    label: "Count",
                     data: data.counts,
                     backgroundColor: [
                       "rgba(239, 68, 68, 0.7)", // red-500
@@ -177,7 +179,7 @@ endblock %} {% block content %}
           } else {
             const container = chartCanvas.parentElement;
             container.innerHTML =
-              '<p class="text-center text-gray-500 py-8">Không có dữ liệu để vẽ biểu đồ.</p>';
+              '<p class="text-center text-gray-500 py-8">No data available to draw the chart.</p>';
           }
         });
     }
