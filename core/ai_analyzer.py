@@ -3,84 +3,91 @@ from bs4 import BeautifulSoup
 
 class AIAnalyzer:
     """
-    Engine Phân tích được thiết kế lại, tập trung vào phương pháp so sánh
-    sự khác biệt (Differential Analysis) để phát hiện các bất thường.
+    A redesigned analysis engine focusing on Differential Analysis 
+    to detect anomalies indicative of vulnerabilities.
     """
 
     def __init__(self):
-        # Giữ lại một số chuỗi lỗi SQL/Server rõ ràng để phát hiện nhanh
-        self.quick_error_indicators = [
-            # SQL Errors
+        # A clear list of SQL/Server error strings for quick detection.
+        self.sql_error_indicators = [
+            # Common SQL Errors
             "you have an error in your sql syntax", "warning: mysql",
             "unclosed quotation mark", "syntax error", "unknown column",
             "ora-00933", "invalid sql statement", "odbc driver error",
-            # Path Traversal / File Inclusion Errors
+            "sql command not properly ended", "sqlite error"
+        ]
+        
+        # A separate list for other error types
+        self.file_inclusion_error_indicators = [
             "failed to open stream", "no such file or directory", "include(",
-            # Command Injection Indicators (nếu output trực tiếp)
-            "permission denied", "command not found"
+            "warning: include", "failed opening required"
         ]
 
     def _get_text_from_html(self, html_content):
-        """Trích xuất văn bản thuần túy từ HTML để so sánh, loại bỏ script và style."""
+        """Extracts clean, comparable text from HTML, removing scripts and styles."""
+        if not html_content:
+            return ""
         soup = BeautifulSoup(html_content, 'html.parser')
-        for script in soup(["script", "style"]):
-            script.extract()
-        return " ".join(soup.get_text().split())
+        for script_or_style in soup(["script", "style"]):
+            script_or_style.decompose()
+        return " ".join(soup.stripped_strings)
 
-    def analyze_response_for_vuln(self, base_response, test_response, payload, vuln_type):
+    def analyze_for_error_based(self, response):
         """
-        Phân tích và so sánh hai phản hồi để tìm dấu hiệu của lỗ hổng.
+        Analyzes a single response to check for obvious error messages.
+        This is the primary method for error-based detection.
 
-        :param base_response: Phản hồi HTTP gốc (không có payload).
-        :param test_response: Phản hồi HTTP sau khi tiêm payload.
-        :param payload: Payload đã được sử dụng.
-        :param vuln_type: Loại lỗ hổng đang được kiểm tra ('xss', 'sqli', 'cmdi', etc.).
-        :return: Tuple (is_vulnerable, evidence, confidence_score).
+        :param response: The HTTP response object from the server.
+        :return: Tuple (is_vulnerable, evidence).
         """
+        response_text = response.text.lower()
         
-        test_response_text = test_response.text.lower()
+        # Check for classic SQL errors
+        for error in self.sql_error_indicators:
+            if error in response_text:
+                return (True, f"Response contains a classic SQL error string: '{error}'")
         
-        # 1. Kiểm tra các dấu hiệu lỗi rõ ràng (phát hiện nhanh)
-        for error in self.quick_error_indicators:
-            if error in test_response_text:
-                return (True, f"Phản hồi chứa chuỗi lỗi kinh điển: '{error}'", 0.95)
+        # Check for classic File Inclusion errors
+        for error in self.file_inclusion_error_indicators:
+             if error in response_text:
+                return (True, f"Response contains a classic File Inclusion error string: '{error}'")
 
-        # 2. Kiểm tra sự phản chiếu trực tiếp của payload (chủ yếu cho XSS)
-        if vuln_type == 'xss':
-            # Nếu payload xuất hiện nguyên vẹn trong HTML, đó là dấu hiệu XSS rất mạnh
-            if payload.lower() in test_response_text:
-                 return (True, f"Payload '{payload}' được phản chiếu trực tiếp trong phản hồi.", 0.90)
+        # Check for high-impact status codes
+        if response.status_code >= 500:
+            return (True, f"Server returned a critical error status code: {response.status_code}")
 
-        # 3. Phân tích so sánh sự khác biệt (Differential Analysis)
+        return (False, None)
 
-        # So sánh mã trạng thái HTTP
-        if base_response.status_code != test_response.status_code:
-            # Ví dụ: trang đang hoạt động (200) bỗng dưng lỗi (500) là dấu hiệu mạnh
-            if base_response.status_code == 200 and test_response.status_code >= 500:
-                 return (True, f"Mã trạng thái thay đổi từ {base_response.status_code} thành {test_response.status_code}, cho thấy lỗi server.", 0.85)
-            # Một số WAF (Web Application Firewall) có thể trả về 403 khi phát hiện payload
-            if base_response.status_code == 200 and test_response.status_code == 403:
-                 return (True, f"Mã trạng thái thay đổi thành 403 (Forbidden), có thể do WAF chặn payload.", 0.60)
+    def compare_responses(self, response_true, response_false):
+        """
+        Performs a differential analysis between two responses to detect subtle changes.
+        This is the core of Boolean-Based Blind detection.
 
+        :param response_true: The HTTP response from a logically TRUE payload (e.g., ' or 1=1--).
+        :param response_false: The HTTP response from a logically FALSE payload (e.g., ' and 1=2--).
+        :return: Tuple (is_different, evidence).
+        """
+        # Rule 1: Status code difference is a strong indicator
+        if response_true.status_code != response_false.status_code:
+            return (True, f"Status codes differ: TRUE payload returned {response_true.status_code}, FALSE payload returned {response_false.status_code}.")
 
-        # So sánh nội dung HTML
-        base_text = self._get_text_from_html(base_response.text)
-        test_text = self._get_text_from_html(test_response.text)
+        # Rule 2: Content length difference can be a good indicator
+        len_true = len(response_true.content)
+        len_false = len(response_false.content)
+        if abs(len_true - len_false) > 100: # Threshold for significant difference
+             return (True, f"Content lengths differ significantly: {len_true} bytes vs {len_false} bytes.")
+
+        # Rule 3: Text content difference (most reliable)
+        text_true = self._get_text_from_html(response_true.text)
+        text_false = self._get_text_from_html(response_false.text)
         
-        # Nếu không có sự khác biệt nào về nội dung, gần như chắc chắn không có lỗ hổng
-        if base_text == test_text:
-            return (False, None, 0.0)
-            
-        # Sử dụng difflib để tính toán tỷ lệ khác biệt
-        diff_ratio = difflib.SequenceMatcher(None, base_text, test_text).ratio()
+        if not text_true or not text_false:
+            return (False, None) # Cannot compare if one is empty
 
-        # Nếu nội dung gần như giống hệt nhau, bỏ qua
-        if diff_ratio > 0.98:
-            return (False, None, 0.0)
+        diff_ratio = difflib.SequenceMatcher(None, text_true, text_false).ratio()
 
-        # Nếu có sự khác biệt đáng kể, đây là một dấu hiệu cần xem xét
-        # Ngưỡng này có thể cần được tinh chỉnh sau khi thử nghiệm thực tế
-        if diff_ratio < 0.95: 
-            return (True, f"Nội dung phản hồi thay đổi đáng kể (tỷ lệ tương đồng: {diff_ratio:.2f}) sau khi tiêm payload.", 0.75)
+        # If the pages are substantially different, it's a vulnerability.
+        if diff_ratio < 0.98: # 98% similarity threshold; can be adjusted
+            return (True, f"Page content differs significantly between TRUE and FALSE payloads (Similarity Ratio: {diff_ratio:.2f}). This is a strong indicator of Blind SQLi.")
 
-        return (False, None, 0.0)
+        return (False, None)

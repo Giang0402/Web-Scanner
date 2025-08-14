@@ -1,94 +1,135 @@
-# giang0402/web-scanner/Web-Scanner-e94e379f950bc97333bfe721b328412df3aa10ea/core/scanners/xss_scanner.py
+# core/scanners/xss_scanner.py
+
 from .base_scanner import BaseScanner
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
-import time
-import requests
-import re
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 class XSSScanner(BaseScanner):
+
     @property
     def name(self):
         return 'xss'
 
-    def _is_payload_reflected(self, content, payload):
-        """Kiểm tra xem payload có thực sự được phản chiếu trong nội dung hay không."""
-        normalized_content = re.sub(r'[^a-z0-9]', '', content.lower())
-        normalized_payload = re.sub(r'[^a-z0-9]', '', payload.lower())
-        return normalized_payload in normalized_content
-
     def scan(self, target):
         """
-        Điều phối việc quét dựa trên loại mục tiêu.
-        Giờ đây đã có thể xử lý cả URL và Form.
+        The main dispatcher. It intelligently routes targets to the correct
+        scanning logic based on their type and method.
         """
-        if target['type'] == 'url':
-            return self._scan_get_url(target['value'])
+        target_type = target.get('type')
+        target_value = target.get('value')
+
+        if target_type == 'url' and parse_qs(urlparse(target_value).query):
+            # A direct URL with params, always a GET request
+            return self._scan_get_request(target_value)
         
-        # === LOGIC MỚI ĐỂ XỬ LÝ FORM ===
-        elif target['type'] == 'form':
-            form_details = target['value']
-            # Nếu là form GET, chúng ta chuyển nó thành một URL để quét
-            if form_details['method'] == 'get':
-                base_url = form_details['url']
-                inputs = form_details['inputs']
-                # Tạo một URL giả lập với các tham số từ form
-                test_data = {inp['name']: 'test' for inp in inputs if inp.get('name')}
-                if not test_data:
-                    return []
-                full_url_to_scan = f"{base_url}?{urlencode(test_data)}"
-                return self._scan_get_url(full_url_to_scan)
-            # Bạn có thể thêm logic cho form POST ở đây nếu cần
-            # elif form_details['method'] == 'post':
-            #     return self._scan_post_form(form_details)
+        elif target_type == 'form':
+            # A form was discovered
+            form_method = target_value.get('method', 'get').lower()
+            if form_method == 'get':
+                # A GET form is functionally equivalent to a URL with parameters
+                return self._scan_get_form(target_value)
+            else: # post
+                # A POST form, typically for Stored XSS
+                return self._scan_post_form(target_value)
         
         return []
 
-    def _scan_get_url(self, url):
-        found_vulnerabilities = []
+    def _confirm_with_playwright(self, html_content):
+        """Renders HTML in a headless browser to confirm JS execution."""
+        if not html_content: return False
+        vulnerable = False
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                page = browser.new_page()
+
+                def handle_dialog(dialog):
+                    nonlocal vulnerable
+                    if 'XSS_SUCCESS' in dialog.message: vulnerable = True
+                    dialog.dismiss()
+
+                page.on('dialog', handle_dialog)
+                page.set_content(html_content, wait_until='domcontentloaded')
+                page.wait_for_timeout(500)
+                browser.close()
+                return vulnerable
+        except Exception:
+            return False
+
+    def _scan_get_request(self, url):
+        """Scan a raw URL that already has GET parameters."""
+        vulnerabilities = []
+        print(f"    -> Scanning [XSS on GET URL]: {url[:80]}")
         parsed_url = urlparse(url)
         params = parse_qs(parsed_url.query)
-        if not params:
-            return []
-
-        try:
-            # Sử dụng URL gốc (không có query string) để lấy base_response
-            # Điều này giúp so sánh chính xác hơn
-            base_url_no_query = urlunparse((parsed_url.scheme, parsed_url.netloc, parsed_url.path, "", "", ""))
-            base_response = self.session.get(base_url_no_query, timeout=7, allow_redirects=True)
-            if "login.php" in base_response.url:
-                return []
-        except requests.RequestException:
-            return []
 
         for param in list(params.keys()):
             for payload in self.payloads:
                 modified_params = params.copy()
                 modified_params[param] = payload
-                modified_query = urlencode(modified_params, doseq=True)
-                new_url = urlunparse((parsed_url.scheme, parsed_url.netloc, parsed_url.path, "", modified_query, ""))
-                
+                test_url = urlunparse(parsed_url._replace(query=urlencode(modified_params, doseq=True)))
                 try:
-                    test_response = self.session.get(new_url, timeout=7, allow_redirects=True)
-                    if "login.php" in test_response.url: continue
-
-                    content_type = test_response.headers.get('Content-Type', '')
-                    is_html = 'text/html' in content_type.lower()
-                    
-                    if self._is_payload_reflected(test_response.text, payload) and is_html:
-                        evidence = f"Payload '{payload}' được phản chiếu trong phản hồi HTML của trang."
-                        # Sử dụng URL gốc trong báo cáo để dễ đọc hơn
-                        print(f"  [+] XSS VULN CONFIRMED! URL: {url}, Param: {param}")
-                        found_vulnerabilities.append({
-                            'url': url, 
-                            'type': self.name.upper(), 
-                            'payload': payload, 
-                            'evidence': evidence, 
-                            'ai_confidence': 0.98,
-                            'method': 'GET'
+                    response = self.session.get(test_url, timeout=10)
+                    if response.ok and self._confirm_with_playwright(response.text):
+                        print(f"      [+] VULN (Reflected XSS) CONFIRMED! Param: {param}")
+                        vulnerabilities.append({
+                            'url': url, 'type': 'XSS_REFLECTED_URL', 'payload': payload,
+                            'evidence': "Execution confirmed via headless browser.", 'method': 'GET', 'parameter': param
                         })
-                        break
+                        return vulnerabilities
+                except Exception: continue
+        return vulnerabilities
+
+    def _scan_get_form(self, form_details):
+        """Scan a form that submits via GET (Reflected XSS)."""
+        vulnerabilities = []
+        url = form_details['url']
+        print(f"    -> Scanning [XSS on GET Form]: {url[:80]}")
+        
+        base_url = urlunparse(urlparse(url)._replace(query=""))
+        
+        for input_field in form_details['inputs']:
+            param_name = input_field.get('name')
+            if not param_name or input_field.get('type') not in ['text', 'search', 'textarea']: continue
                 
-                except requests.RequestException:
-                    time.sleep(0.1)
-                    continue
-        return found_vulnerabilities
+            for payload in self.payloads:
+                form_data = {i['name']: 'test' for i in form_details['inputs'] if i.get('name')}
+                form_data[param_name] = payload
+                test_url = f"{base_url}?{urlencode(form_data, doseq=True)}"
+                try:
+                    response = self.session.get(test_url, timeout=10)
+                    if response.ok and self._confirm_with_playwright(response.text):
+                        print(f"      [+] VULN (Reflected XSS) CONFIRMED! Param: {param_name}")
+                        vulnerabilities.append({
+                            'url': url, 'type': 'XSS_REFLECTED_FORM', 'payload': payload,
+                            'evidence': "Execution confirmed via headless browser.", 'method': 'GET', 'parameter': param_name
+                        })
+                        return vulnerabilities
+                except Exception: continue
+        return vulnerabilities
+
+    def _scan_post_form(self, form_details):
+        """Scan a form that submits via POST (Stored XSS)."""
+        vulnerabilities = []
+        url = form_details['url']
+        print(f"    -> Scanning [XSS on POST Form]: {url[:80]}")
+
+        for input_field in form_details['inputs']:
+            param_name = input_field.get('name')
+            if not param_name or input_field.get('type') not in ['text', 'textarea', 'search']: continue
+
+            for payload in self.payloads:
+                form_data = {i['name']: 'test' for i in form_details['inputs'] if i.get('name')}
+                form_data[param_name] = payload
+                try:
+                    self.session.post(url, data=form_data, timeout=10)
+                    response = self.session.get(url, timeout=10)
+                    if response.ok and self._confirm_with_playwright(response.text):
+                        print(f"      [+] VULN (Stored XSS) CONFIRMED! Param: {param_name}")
+                        vulnerabilities.append({
+                            'url': url, 'type': 'XSS_STORED', 'payload': payload,
+                            'evidence': "Execution confirmed via headless browser.", 'method': 'POST', 'parameter': param_name
+                        })
+                        return vulnerabilities
+                except Exception: continue
+        return vulnerabilities

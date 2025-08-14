@@ -1,6 +1,7 @@
-; ls -la
-| ls -la
-; cat /etc/passwd
-| cat /etc/passwd
-; id
-| id
+; {command}
+| {command}
+& {command}
+&& {command}
+|| {command}
+`{command}`
+$(echo {command})
